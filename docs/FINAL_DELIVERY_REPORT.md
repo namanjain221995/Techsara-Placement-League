@@ -150,7 +150,7 @@ Requires Node.js 22 LTS (or ≥ 20.11). Nothing else: PostgreSQL is bundled.
 ## 9b. Production (added after delivery)
 - **Repository:** `namanjain221995/Techsara-Placement-League` (public — the internal video analysis is not published there).
 - **Pipeline:** `.github/workflows/deploy.yml` — every push and pull request runs typecheck, lint, format check, unit + integration tests, the production build and the end-to-end tests; pushes to `main` are then deployed to the EC2 server over SSH by `deploy/deploy.sh` (Docker Compose: PostgreSQL + app + Cloudflare Tunnel).
-- **Address:** `https://tpl.techsarasolutions.com` through the Cloudflare Tunnel (public hostname → `http://app:3000`).
+- **Address:** `https://tpl.techsarasolutions.com` through the Cloudflare Tunnel (public hostname → `http://app:3000`) — live since 31 Oct 2026; health check, sign-in page and live-screen connection verified through Cloudflare.
 - **Demo data removed:** the fictional demo auction and its seed scripts are no longer part of the app.
 - Setup steps (GitHub secrets, Cloudflare public hostname, security group): `docs/DEPLOYMENT_GUIDE.md` → Option D.
 
