@@ -8,7 +8,8 @@
 | Session theft | 256-bit random token in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` when `COOKIE_SECURE=true`); only its SHA-256 is stored; server-side expiry (12 h default); logout deletes the session |
 | CSRF | Mutations require the custom header `x-tpl-request: 1` (cannot be sent cross-site without a CORS pre-flight, which the server never grants) and a matching `Origin` |
 | Malicious input | Zod validation on every body (lengths, types, UUIDs, hex colours, http(s) URLs); SQL via parameterised Drizzle queries; React escapes all text (descriptions rendered as text with `white-space: pre-wrap`, never as HTML) |
-| Malicious uploads | Memory upload ≤ 3 MB, one file; type decided by **magic bytes** (PNG/JPEG/WEBP/GIF only; SVG refused); random UUID file names; served with `X-Content-Type-Options: nosniff`; strict file-name regex prevents path traversal |
+| Malicious uploads | Memory upload ≤ 3 MB (images) / 10 MB (offer letters), one file; type decided by **magic bytes** (images: PNG/JPEG/WEBP/GIF; letters: PDF/PNG/JPEG/WEBP; SVG and HTML refused); random UUID file names; served with `X-Content-Type-Options: nosniff`; strict file-name regex prevents path traversal |
+| Early leak of the winner data (original names, salaries, offer letters, salary totals/ranks) | Kept out of every public payload by construction: organizer and public sockets are in **separate rooms**, public REST/socket payloads go through `publicSnapshot()`, the reveal view only contains fields whose step has been reached. Letters live in `UPLOAD_DIR/private/` (unreachable through `/api/uploads`) and the public letter route checks the reveal position on every request; responses are `no-store`/`noindex`. Organizer sockets lose the private room when their session ends. The organizer console masks hidden totals by default. Verified by `tests/integration/reveal.test.ts`, which scans every public payload before the reveal |
 | Game-rule abuse / race conditions | Server-side rules; per-auction serialisation + row lock; idempotency keys; DB constraints (single open lot, sold consistency, positive money) |
 | Information disclosure | Error handler hides internals (500 → generic message); audit log & exports only for organizers; public display link is an unguessable code (name + 24 random bits) |
 | Clickjacking / headers | Helmet: `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security` (when behind HTTPS), etc. |
@@ -20,6 +21,7 @@ Every setup change and live command is written to `audit_logs` (who, what, when,
 ## Known gaps / decisions
 - **CSP:** Helmet's Content-Security-Policy is disabled because Next.js injects inline bootstrap scripts; a nonce-based CSP can be added for internet-facing deployments.
 - **HTTPS:** the bundled server speaks HTTP; terminate TLS at a reverse proxy (Caddy/Nginx/ALB) for any non-LAN deployment and set `COOKIE_SECURE=true`.
-- **Public display:** anyone with the link can watch. Candidate details on screen are what the organizer types — see privacy question Q-08.
+- **Public display:** anyone with the link can watch. Candidate details on screen are what the organizer types — see privacy question Q-08. Once the final reveal reaches a profile's letter step, that letter can be opened by anyone with the link (until the reveal is restarted) — redact sensitive details before uploading.
+- **Audit log:** private-field edits record *which* fields changed (`privateFieldsChanged`), never the salary values.
 - **Single role:** all organizers have the same rights (no read-only organizer role).
 - Dependency audit: `npm audit` was disabled in the sandbox (no registry audit endpoint); run it before production use.

@@ -50,7 +50,7 @@ Nothing was copied (code, branding, logos or text). `FEATURE_COMPARISON.md` maps
 **Incomplete:** none of the confirmed or inferred requirements.
 
 **Blocked, awaiting a client decision** (details in `docs/KNOWN_LIMITATIONS.md`):
-- **Q-01:** how the league winner is decided.
+- ~~**Q-01:** how the league winner is decided~~ — **answered by the client on 1 Nov 2026 and built** (§9c).
 - **Q-02:** whether team members bid from their phones.
 - **Q-04:** whether the timer auto-sells at time-up. Today it only shows "time up".
 - **Q-06:** bold text in descriptions (unclear audio).
@@ -94,9 +94,9 @@ flowchart LR
 | Layer | Status |
 |---|---|
 | **Frontend** | ✅ 11 routes: landing, login, auctions, overview, teams, candidates, settings, live console, results & reports, live screen, not-found. Premium dark broadcast design, readable on projector, 4K LED wall and phone. Keyboard shortcuts in the console; reduced-motion support. |
-| **Backend** | ✅ REST API for auth, auctions (create/duplicate/lock/unlock/reset), teams, candidates (Excel/CSV import, photo upload), live commands (15 types), corrections and reports (results, bid history, audit log, Excel export). |
-| **Database** | ✅ 9 tables and 1 migration. Constraints guarantee one open lot per auction and consistent sold records. Tests use separate databases; no demo data ships with the app. |
-| **Real-time** | ✅ One Socket.IO room per auction. A command reaches the display in **under 25 ms** on localhost (8.6–23.9 ms measured across runs). Reconnecting screens restore the exact state, and a server restart keeps the live auction. |
+| **Backend** | ✅ REST API for auth, auctions (create/duplicate/lock/unlock/reset), teams, candidates (Excel/CSV import, photo upload), live commands (19 types, incl. the 4 Final Reveal commands), corrections and reports (results, bid history, audit log, Excel export). |
+| **Database** | ✅ 9 tables and 2 migrations (the second adds the hidden salary data and the reveal state). Constraints guarantee one open lot per auction and consistent sold records. Tests use separate databases; no demo data ships with the app. |
+| **Real-time** | ✅ Two Socket.IO rooms per auction — organizers (full data) and the public screen (sanitized). A command reaches the display in **under 25 ms** on localhost (8.6–23.9 ms measured across runs). Reconnecting screens restore the exact state, and a server restart keeps the live auction. |
 
 ## 7. Test results (`docs/TEST_REPORT.md`)
 | Check | Result |
@@ -105,9 +105,9 @@ flowchart LR
 | `npx eslint .` | ✅ 0 errors, 0 warnings |
 | `npx prettier --check .` | ✅ |
 | `rm -rf .next && npx next build` | ✅ 11 routes |
-| `npx vitest run`: unit | ✅ **25 / 25** |
-| `npx vitest run`: integration (real PostgreSQL, HTTP, WebSocket) | ✅ **21 / 21** |
-| `npx playwright test`: end-to-end, production build, Chromium | ✅ **5 / 5** |
+| `npx vitest run`: unit | ✅ **37 / 37** (25 + 12 for the salary winner, 1 Nov 2026) |
+| `npx vitest run`: integration (real PostgreSQL, HTTP, WebSocket) | ✅ **24 / 24** (21 + 3) |
+| `npx playwright test`: end-to-end, production build, Chromium | ✅ **6 / 6** (5 + the Final Reveal flow) |
 | Docker image steps reproduced outside Docker (production-only install, image start command, fresh external PostgreSQL) | ✅ |
 | Docker Compose on the client laptop (Windows, Docker Desktop) | ✅ image built, both containers running, app served at http://localhost:3000 |
 | Demo run on the production server | ✅ Full demo auction played to the end; 15 screenshots taken (plus 2 from the end-to-end layout test); 0 page or console errors; Excel export checked |
@@ -153,6 +153,25 @@ Requires Node.js 22 LTS (or ≥ 20.11). Nothing else: PostgreSQL is bundled.
 - **Address:** `https://tpl.techsarasolutions.com` through the Cloudflare Tunnel (public hostname → `http://app:3000`) — live since 31 Oct 2026; health check, sign-in page and live-screen connection verified through Cloudflare.
 - **Demo data removed:** the fictional demo auction and its seed scripts are no longer part of the app.
 - Setup steps (GitHub secrets, Cloudflare public hostname, security group): `docs/DEPLOYMENT_GUIDE.md` → Option D.
+
+## 9c. Winner by combined actual offers + Final Reveal (client request, 1 Nov 2026)
+**Rule (CONFIRMED):** a team's score is the sum of the actual annual salaries (USD, excluding bonuses) on the original offer letters of the profiles it purchased. Highest total wins; the number of profiles does not matter; auction credits are never deducted. Ties: more credits remaining, then joint winners. Full rules with classifications: `docs/requirements/GAME_RULES.md` §9.
+
+**What was built**
+- **Per profile** (Candidates page, gold "Hidden until the final reveal" box): tweaked name (shown while bidding), original candidate name, actual offer letter (PDF/PNG/JPG/WEBP ≤ 10 MB, stored outside the public uploads), annual salary in whole USD, "verified against the letter" tick (cleared automatically when the amount changes). Readiness bar (e.g. *Annual salaries 20/20 · Verified 20/20 · Offer letters 20/20*), Excel template/import columns, clone and export support.
+- **Hidden live totals:** recomputed from SOLD purchases on every change — a bid alone never counts, each purchase counts once, unsold profiles never count, corrections and cancellations (now also possible after *End auction*, until the reveal) update credits and totals together. Shown only in the organizer's live console (masked until **Show**), the lot strip and Results.
+- **Privacy by construction:** organizer and audience sockets are in separate rooms; every public payload passes through `publicSnapshot()`; the public reveal view contains only the steps already reached; the public letter URL answers only from the profile's letter step; organizer sockets lose private data when their session ends.
+- **Final Reveal:** after *End auction* the screen shows "Final reveal coming up". **Start Final Reveal** (blocked while a purchased profile has no salary; warnings for missing letters/names/verification) walks through every purchased profile in purchase order: tweaked name → original name → offer letter (embedded) → annual salary (count-up) → purchasing team, adding the salary to that team's visible total. Next/Back/Restart in the console (→ / ← keys). It ends with the leaderboard *Team · Profiles purchased · Combined annual offer amount · Rank*, winner highlighted (joint winners supported, disqualified teams listed unranked).
+- **Persistence:** the reveal position and all purchases are in PostgreSQL — a projector refresh or a server restart resumes exactly (tested).
+- **Migration:** `drizzle/0001_hidden_salary_reveal.sql` (additive; applied automatically at start-up).
+
+**My decisions — please confirm (also in `KNOWN_LIMITATIONS.md`)**
+- A team **disqualified** for missing the minimum squad is **not ranked and cannot win** (Q-07).
+- Profiles are revealed in **purchase order** (Q-09); the salary joins the team total at the **team** step (Q-10).
+- A team with $0 cannot be the winner; the reveal cannot start while a purchased profile has no salary.
+- From its reveal step on, an offer letter can be opened by anyone with the display link — redact private details (address, signature, IDs) before uploading.
+
+**Data:** no salary amounts exist in the app yet — nothing fictional was stored and none can be invented. The organizer enters the 20 real, verified salaries and uploads the 20 letters before the event.
 
 ## 10. Deployment readiness
 | Scenario | Assessment |

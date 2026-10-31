@@ -1,11 +1,11 @@
 import { Readable } from "node:stream";
 import { asc, desc, eq } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { formatMoney, K_PER_MILLION, parseMillions } from "../../src/shared/money";
+import { formatMoney, formatUsd, K_PER_MILLION, parseMillions, parseUsd } from "../../src/shared/money";
 import { playerSchema, type PlayerInput } from "../../src/shared/schemas";
 import type { Db } from "../db";
 import { auctions, auditLogs, bids, lots, players, teams } from "../db/schema";
-import { auctionView, playerView, teamViews } from "../engine/snapshot";
+import { auctionView, playerView, privatePlayerView, privateView, teamViews } from "../engine/snapshot";
 import { badRequest, notFound } from "../util/errors";
 
 // ------------------------------------------------------------------------------ import
@@ -17,6 +17,24 @@ const HEADER_MAP: Record<string, keyof PlayerInput> = {
   candidate: "name",
   candidatename: "name",
   playername: "name",
+  tweakedname: "name",
+  displayname: "name",
+  nameshownduringbidding: "name",
+  originalname: "originalName",
+  originalcandidatename: "originalName",
+  realname: "originalName",
+  actualname: "originalName",
+  annualsalary: "annualSalary",
+  annualsalaryusd: "annualSalary",
+  salary: "annualSalary",
+  salaryusd: "annualSalary",
+  actualsalary: "annualSalary",
+  annualoffer: "annualSalary",
+  annualofferusd: "annualSalary",
+  offeramount: "annualSalary",
+  offeramountusd: "annualSalary",
+  salaryverified: "salaryVerified",
+  verified: "salaryVerified",
   role: "role",
   category: "role",
   description: "description",
@@ -79,7 +97,19 @@ export async function parsePlayersFile(file: Express.Multer.File | undefined, ro
           if (k === null) errors.push({ row: r, message: `Base price "${text}" is not a number of millions.` });
           raw.basePrice = k ?? undefined;
         }
+      } else if (field === "annualSalary") {
+        if (text) {
+          const usd = parseUsd(text);
+          if (usd === null) errors.push({ row: r, message: `Annual salary "${text}" must be whole US dollars, e.g. 120000.` });
+          raw.annualSalary = usd ?? undefined;
+        }
+      } else if (field === "salaryVerified") {
+        const v = text.toLowerCase();
+        if (["yes", "y", "true", "1", "verified", "✓", "x"].includes(v)) raw.salaryVerified = true;
+        else if (["", "no", "n", "false", "0"].includes(v)) raw.salaryVerified = false;
+        else errors.push({ row: r, message: `Salary Verified "${text}" must be Yes or No.` });
       } else if (field === "photoUrl") raw.photoUrl = text || null;
+      else if (field === "originalName") raw.originalName = text || null;
       else raw[field] = text;
     }
     if (empty) continue;
@@ -102,6 +132,9 @@ export async function playersTemplate(): Promise<Buffer> {
     { header: "Description", key: "description", width: 70 },
     { header: "Base Price (M)", key: "base", width: 15 },
     { header: "Photo URL", key: "photo", width: 30 },
+    { header: "Original Name", key: "original", width: 26 },
+    { header: "Annual Salary (USD)", key: "salary", width: 20 },
+    { header: "Salary Verified", key: "verified", width: 15 },
   ];
   ws.getRow(1).font = { bold: true };
   const example = [
@@ -112,6 +145,9 @@ export async function playersTemplate(): Promise<Buffer> {
       description: "• Experience: 5 years\n• Niche: AI/ML — NLP, computer vision\n• Current interview: final round",
       base: "",
       photo: "",
+      original: "",
+      salary: "",
+      verified: "No",
     },
     {
       number: 2,
@@ -120,6 +156,9 @@ export async function playersTemplate(): Promise<Buffer> {
       description: "1. Experience: 4 years\n2. Niche: QA automation\n3. Notes: prefers remote",
       base: 1.5,
       photo: "",
+      original: "",
+      salary: "",
+      verified: "No",
     },
   ];
   example.forEach((e) => {
@@ -134,6 +173,11 @@ export async function playersTemplate(): Promise<Buffer> {
     "• Description: write it point-wise. Line breaks (Alt+Enter in Excel), numbering and bullets are kept exactly.",
     "• Base Price (M): in millions, e.g. 1.5 — leave empty to use the auction base price.",
     "• Number: optional; empty rows get the next free number.",
+    "• Name: the tweaked name shown to everyone during bidding.",
+    "• Original Name, Annual Salary (USD), Salary Verified: HIDDEN until the final reveal (organizer only). They decide the winner.",
+    "• Annual Salary (USD): the annual salary on the actual offer letter, whole US dollars, EXCLUDING bonuses (e.g. 120000).",
+    "• Salary Verified: Yes once the amount has been checked against the offer letter. Leave empty / No otherwise.",
+    "• Offer letters (PDF or image) are uploaded per candidate on the Candidates page; they cannot be imported from this sheet.",
     "• Replace the two example rows with your candidates. Nothing is imported unless every row is valid.",
   ])
     help.addRow([line]);
@@ -148,9 +192,13 @@ export async function resultsData(db: Db, auctionId: string) {
   const ts = await db.select().from(teams).where(eq(teams.auctionId, auctionId));
   const ps = await db.select().from(players).where(eq(players.auctionId, auctionId)).orderBy(asc(players.number));
   const tv = teamViews(a, ts, ps);
-  const views = ps.map(playerView);
+  const views = ps.map(privatePlayerView);
+  const priv = privateView(a, ps, tv);
   return {
     auction: auctionView(a),
+    reveal: { status: a.revealStatus },
+    standings: priv.standings,
+    revealCheck: priv.revealCheck,
     teams: tv.map((t) => ({
       ...t,
       belowMinimum: t.squadCount < a.minSquad,
@@ -161,6 +209,18 @@ export async function resultsData(db: Db, auctionId: string) {
     disqualified: views.filter((p) => p.status === "DISQUALIFIED"),
     totals: { spent: tv.reduce((s, t) => s + t.spent, 0), sold: views.filter((p) => p.status === "SOLD").length, candidates: views.length },
   };
+}
+
+/** Public, sanitized squads (tweaked names + credits paid only) for the audience screens. */
+export async function publicSquads(db: Db, auctionId: string) {
+  const ps = await db.select().from(players).where(eq(players.auctionId, auctionId)).orderBy(asc(players.number));
+  const out: Record<string, { name: string; price: number | null }[]> = {};
+  for (const p of ps
+    .map(playerView)
+    .filter((v) => v.status === "SOLD" && v.soldToTeamId)
+    .sort((x, y) => (y.soldPrice ?? 0) - (x.soldPrice ?? 0)))
+    (out[p.soldToTeamId as string] ??= []).push({ name: p.name, price: p.soldPrice });
+  return out;
 }
 
 export async function bidHistory(db: Db, auctionId: string) {
@@ -237,19 +297,69 @@ export async function exportResults(db: Db, auctionId: string) {
     members: `Purse ${formatMoney(data.auction.purse, sym)}, base ${formatMoney(data.auction.basePrice, sym)}, squad ${data.auction.minSquad}–${data.auction.maxSquad}`,
   });
   s.addRow({ team: "Exported", members: new Date().toISOString() });
+  const champion = data.standings.filter((x) => x.winner);
+  const final = data.auction.status === "COMPLETED" && !data.revealCheck.blocking.length;
+  s.addRow({
+    team: final ? (champion.length > 1 ? "Joint winners" : "Winner") : "Current leader",
+    members: champion.length
+      ? `${champion.map((x) => teamName.get(x.teamId)).join(" & ")} — ${formatUsd(champion[0].total)} combined annual offers${final ? "" : " (not final)"}`
+      : "Not decided",
+  });
+
+  const w = wb.addWorksheet("Winner (Salary Totals)");
+  w.columns = [
+    { header: "Rank", key: "rank", width: 7 },
+    { header: "Team", key: "team", width: 28 },
+    { header: "Profiles purchased", key: "profiles", width: 18 },
+    { header: "Combined annual offer amount (USD)", key: "total", width: 32 },
+    { header: `Credits remaining (${sym}M)`, key: "credits", width: 22 },
+    { header: "Result", key: "result", width: 40 },
+  ];
+  bold(w);
+  const winners = data.standings.filter((x) => x.winner).length;
+  for (const st of data.standings)
+    w.addRow({
+      rank: st.rank ?? "—",
+      team: teamName.get(st.teamId) ?? "?",
+      profiles: st.profiles,
+      total: st.total,
+      credits: m(st.creditsLeft),
+      result: st.disqualified ? `Not ranked — below the minimum squad of ${data.auction.minSquad}` : st.winner ? (winners > 1 ? "JOINT WINNER" : "WINNER") : "",
+    });
+  w.getColumn("total").numFmt = '"$"#,##0';
+  w.addRow({});
+  w.addRow({ team: "Rule", result: "Highest combined actual annual salary wins; tie → more credits remaining; still tied → joint winners." });
+  if (data.revealCheck.blocking.length) w.addRow({ team: "Not final", result: data.revealCheck.blocking.join("; ") });
 
   const q = wb.addWorksheet("Squads");
   q.columns = [
     { header: "Team", key: "team", width: 28 },
     { header: "#", key: "no", width: 6 },
-    { header: "Candidate", key: "name", width: 28 },
+    { header: "Candidate (tweaked name)", key: "name", width: 28 },
+    { header: "Original name", key: "original", width: 28 },
     { header: "Role", key: "role", width: 16 },
     { header: `Price (${sym}M)`, key: "price", width: 12 },
     { header: "Round", key: "round", width: 8 },
+    { header: "Annual salary (USD)", key: "salary", width: 20 },
+    { header: "Salary verified", key: "verified", width: 15 },
+    { header: "Offer letter", key: "letter", width: 30 },
   ];
   bold(q);
   for (const t of data.teams)
-    for (const p of t.players) q.addRow({ team: t.name, no: p.number, name: p.name, role: p.role, price: m(p.soldPrice), round: p.soldRound });
+    for (const p of t.players)
+      q.addRow({
+        team: t.name,
+        no: p.number,
+        name: p.name,
+        original: p.originalName ?? "",
+        role: p.role,
+        price: m(p.soldPrice),
+        round: p.soldRound,
+        salary: p.annualSalary,
+        verified: p.annualSalary == null ? "" : p.salaryVerified ? "Yes" : "No",
+        letter: p.letter?.fileName ?? "missing",
+      });
+  q.getColumn("salary").numFmt = '"$"#,##0';
 
   const u = wb.addWorksheet("Unsold & Pool");
   u.columns = [

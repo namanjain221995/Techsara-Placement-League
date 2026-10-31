@@ -55,3 +55,30 @@ export function multipleOfBase(amount: number, base: number): string {
   if (!base) return "";
   return `${(amount / base).toFixed(1)}×`;
 }
+
+/**
+ * Real annual salaries (offer letters) are whole US dollars — a different unit from the
+ * auction credits above. 431000 → "$431,000".
+ */
+export function formatUsd(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || Number.isNaN(amount)) return "—";
+  return `$${Math.round(amount).toLocaleString("en-US")}`;
+}
+
+/**
+ * Parse an annual salary typed or imported as whole US dollars: "120000", "$120,000",
+ * "120,000.00", "USD 95000". Returns null for anything that is not a positive whole amount.
+ */
+export function parseUsd(input: string | number | null | undefined): number | null {
+  if (input === null || input === undefined) return null;
+  if (typeof input === "number") return Number.isInteger(input) && input > 0 ? input : null;
+  const cleaned = input
+    .trim()
+    .toLowerCase()
+    .replace(/^usd|usd$/g, "")
+    .replace(/[$,\s]/g, "")
+    .replace(/\.0+$/, "");
+  if (!/^\d+$/.test(cleaned)) return null;
+  const value = Number(cleaned);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}

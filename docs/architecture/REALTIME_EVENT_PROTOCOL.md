@@ -1,6 +1,6 @@
 # Real-time Event Protocol
 
-Transport: Socket.IO 4 at path `/socket.io` (WebSocket first, HTTP long-polling fallback). Rooms: `auction:<auctionId>`.
+Transport: Socket.IO 4 at path `/socket.io` (WebSocket first, HTTP long-polling fallback). Rooms per auction: **`auction:<auctionId>:org`** (signed-in organizers — full snapshot) and **`auction:<auctionId>:pub`** (public screens — `publicSnapshot(…)`, which strips every organizer-only field). One broadcast emits both.
 
 ## Principles
 1. **Server-authoritative.** Browsers never compute game state; they render the snapshot they receive. Shared rule functions are used in the UI only to *pre-validate* (disable buttons, show max bids).
@@ -11,7 +11,7 @@ Transport: Socket.IO 4 at path `/socket.io` (WebSocket first, HTTP long-polling 
 | Direction | Event | Payload | Ack |
 |---|---|---|---|
 | client → server | `join` | `{slug}` (public screen) or `{auctionId}` (organizer; session cookie checked in the handshake) | `{ok:true, snapshot}` or `{ok:false, error:"NOT_FOUND"\|"UNAUTHORIZED"\|"BAD_REQUEST"}` |
-| client → server | `sync` | `{}` | `{ok:true, snapshot}` — safety net every 15 s |
+| client → server | `sync` | `{}` | `{ok:true, snapshot}` — safety net every 15 s. For an organizer socket the session is re-checked; an ended session leaves the organizer room (`{ok:false, error:"UNAUTHORIZED"}`) |
 | client → server | `clock` | `{}` | `{now}` (server epoch ms) — clock offset, every 30 s |
 | server → room | `state` | `LiveSnapshot` | — |
 
@@ -27,10 +27,18 @@ Transport: Socket.IO 4 at path `/socket.io` (WebSocket first, HTTP long-polling 
   lastResult: { result: "SOLD"|"UNSOLD"|..., player, teamId, amount, at } | null,
   stats: { total, pool, sold, unsold, disqualified, totalSpent, topSale, topSpender },
   announcement: { text, at } | null,
+  reveal: { status: "NOT_STARTED"|"IN_PROGRESS"|"COMPLETE", index, step, count,
+            current: RevealCard | null,      // fields stay null until their step: originalName ≥1, letter ≥2, annualSalary ≥3, teamId ≥4
+            revealed: RevealCard[],          // fully revealed profiles
+            standings: TeamStanding[] },     // visible totals so far; ranks/winner only when COMPLETE
+  private?: {                                // ORGANIZER ROOM ONLY — never in a public payload
+    standings: TeamStanding[],               // hidden live salary totals (SOLD only), ranked
+    profiles: PrivatePlayerView[],           // original names, salaries, letters
+    revealCheck: { blocking: string[], warnings: string[] } },
   event: { type: "BID_PLACED", at, teamId, amount, playerId }   // what caused this snapshot
 }
 ```
-`event.type` ∈ `SNAPSHOT, WENT_LIVE, PAUSED, RESUMED, PLAYER_UP, BID_PLACED, BID_UNDONE, SOLD, UNSOLD, SKIPPED, PLAYER_DISQUALIFIED, NEXT_ROUND, TIME_UP, ANNOUNCEMENT, AUCTION_COMPLETED, SETUP_CHANGED`. Screens use it only for effects (SOLD overlay, sounds); the rest of the snapshot is the truth.
+`event.type` ∈ `SNAPSHOT, WENT_LIVE, PAUSED, RESUMED, PLAYER_UP, BID_PLACED, BID_UNDONE, SOLD, UNSOLD, SKIPPED, PLAYER_DISQUALIFIED, NEXT_ROUND, TIME_UP, ANNOUNCEMENT, AUCTION_COMPLETED, SETUP_CHANGED, REVEAL_STARTED, REVEAL_STEP, REVEAL_COMPLETE, REVEAL_RESET`. Screens use it only for effects (SOLD overlay, sounds); the rest of the snapshot is the truth.
 
 ## Sequence: connect, bid, drop, recover
 ```mermaid

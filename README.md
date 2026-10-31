@@ -4,6 +4,8 @@ A live candidate-auction game for TechSara events. Teams spend a fixed virtual p
 
 Built from the client's Hindi requirement video with the rules the client stated: **5 teams · $25M purse · base $1M · minimum 3 / maximum 9 candidates · max bid = purse − base × (minimum − 1) → $23M · teams below the minimum are disqualified at the end**, full point-wise candidate descriptions on screen, and custom bids typed in millions that can never exceed a team's max bid.
 
+**Who wins (client request, 1 Nov 2026):** the team whose purchased profiles have the highest **combined actual annual salary** from the original offer letters (USD, excluding bonuses). Profiles are auctioned under tweaked names; the real names, offer letters, salaries and team totals stay hidden from the audience (the organizer sees the totals live) until the operator runs the step-by-step **Final Reveal**, which ends with the winner leaderboard. Ties go to the team with more credits left, then joint winners.
+
 **Production:** https://tpl.techsarasolutions.com (organizer console: `/admin`) — deployed automatically from `main` (see [Production deployment](#production-deployment)).
 
 ![Live screen](docs/screenshots/display-bidding.png)
@@ -12,7 +14,11 @@ Built from the client's Hindi requirement video with the rules the client stated
 |---|---|---|---|
 | ![Console](docs/screenshots/console-bidding.png) | ![Custom bid](docs/screenshots/console-custom-bid-over-max.png) | ![Sold](docs/screenshots/display-sold.png) | ![Final board](docs/screenshots/display-final-board.png) |
 
-All screenshots (organizer pages, phone, 1080p projector, 4K LED wall) are in `docs/screenshots/`; they were taken with fictional sample data.
+| Final reveal — offer letter | Final leaderboard | Hidden salary totals (organizer only) |
+|---|---|---|
+| ![Reveal](docs/screenshots/display-reveal-step2-offer-letter.png) | ![Leaderboard](docs/screenshots/display-final-leaderboard.png) | ![Hidden totals](docs/screenshots/console-hidden-salary-totals.png) |
+
+All screenshots (organizer pages, phone, 1080p projector, 4K LED wall) are in `docs/screenshots/`; they were taken with fictional sample data (the offer letters in them are watermarked samples).
 
 ## Quick start (Windows, macOS or Linux)
 Requirements: **Node.js 20.11+** (22 LTS recommended). Nothing else — PostgreSQL is bundled.
@@ -52,7 +58,8 @@ Step-by-step: `docs/DEPLOYMENT_GUIDE.md` → Option D.
 | Area | Where |
 |---|---|
 | Organizer console (setup, live console, results) | `src/app/admin/**` |
-| Live screen | `src/app/display/[slug]`, `src/components/display/stage.tsx` |
+| Live screen | `src/app/display/[slug]`, `src/components/display/stage.tsx`, final reveal `src/components/display/reveal.tsx` |
+| Hidden salary scoring & final reveal | `src/shared/rules.ts#rankStandings`, `server/engine/snapshot.ts` (`privateView`, `revealView`, `publicSnapshot`), `src/components/admin/reveal-console.tsx` |
 | Rules (max bid, validation, ordering) | `src/shared/rules.ts` (shared by server and browser) |
 | Server-authoritative engine | `server/engine/engine.ts` |
 | REST API · WebSocket | `server/api/router.ts` · `server/realtime/socket.ts` |

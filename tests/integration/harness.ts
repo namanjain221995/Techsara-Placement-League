@@ -38,6 +38,23 @@ export class Client {
     return { status: r.status, body: parsed as T };
   }
 
+  /** Multipart upload (field "file"), like the organizer UI. */
+  async upload<T = any>(path: string, data: Buffer | string, name: string, type: string): Promise<Res<T>> {
+    const fd = new FormData();
+    fd.append("file", new Blob([typeof data === "string" ? data : new Uint8Array(data)], { type }), name);
+    const headers: Record<string, string> = { "x-tpl-request": "1" };
+    if (this.cookie) headers.cookie = this.cookie;
+    const r = await fetch(this.base + path, { method: "POST", headers, body: fd });
+    const text = await r.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      /* not JSON */
+    }
+    return { status: r.status, body: parsed as T };
+  }
+
   login(username = "admin", password = "integration-test-password") {
     return this.req("POST", "/api/auth/login", { username, password });
   }
@@ -112,3 +129,5 @@ export function nextState(s: Socket, predicate: (snap: LiveSnapshot) => boolean 
     s.on("state", on);
   });
 }
+
+export { samplePdf, samplePng } from "../fixtures/letters";

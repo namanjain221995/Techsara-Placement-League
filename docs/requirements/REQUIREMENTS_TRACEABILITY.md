@@ -1,6 +1,6 @@
 # Requirements Traceability — video evidence → code → tests
 
-Test files: **U** = `tests/unit/rules.test.ts` · **I-L** = `tests/integration/live.test.ts` · **I-R** = `tests/integration/realtime.test.ts` · **E-F** = `tests/e2e/organizer-flow.spec.ts` · **E-R** = `tests/e2e/resilience.spec.ts`.
+Test files: **U** = `tests/unit/rules.test.ts` · **U-W** = `tests/unit/reveal.test.ts` · **I-L** = `tests/integration/live.test.ts` · **I-R** = `tests/integration/realtime.test.ts` · **I-W** = `tests/integration/reveal.test.ts` · **E-F** = `tests/e2e/organizer-flow.spec.ts` · **E-R** = `tests/e2e/resilience.spec.ts` · **E-W** = `tests/e2e/final-reveal.spec.ts`.
 
 | Req | Class | Video | Implementation | Verified by |
 |---|---|---|---|---|
@@ -44,3 +44,17 @@ Test files: **U** = `tests/unit/rules.test.ts` · **I-L** = `tests/integration/l
 | R-NFR-04 auth, CSRF, audit | PROPOSED | — | `auth.ts`, `audit.ts` | I-L auth test, E-F login test |
 | R-NFR-05 layouts & reduced motion | PROPOSED | — | vw/clamp sizing, responsive grid, `prefers-reduced-motion` CSS, `useReducedMotion` | E-R phone/projector/4K screenshots |
 | Q-04 countdown never auto-sells | PROPOSED pending Q-04 | 03:16, 04:57 | `armTimer/onTimer` sets `timeUp` only | I-R countdown test |
+
+## Winner by combined actual offers (client request, 1 Nov 2026)
+| Req | Class | Source | Implementation | Verified by |
+|---|---|---|---|---|
+| R-WIN-01 score = Σ annual salaries; count irrelevant; credits not deducted | CONFIRMED | request §1 | `src/shared/rules.ts#rankStandings`, `server/engine/snapshot.ts#standings` | U-W (client example, credits), I-W (431,000 vs 400,000 end to end), E-W |
+| R-WIN-02 profile data (tweaked/original name, letter, salary, team, price) | CONFIRMED | request §2 | `players` columns (migration `0001_hidden_salary_reveal.sql`), `catalog.ts#updatePlayer/setOfferLetter`, `uploads.ts#saveOfferLetter`, Candidates page private box | I-W (PDF + PNG upload, type check, organizer-only download), E-W |
+| R-WIN-03 hidden totals on SOLD only; corrections; unsold excluded; counted once | CONFIRMED | request §3, §5 | `privateView` (SOLD only), `engine.ts#override` (+ `refreshDisqualification`, post-auction cancellation → UNSOLD) | I-W (bid → $0, SOLD → +salary, RETURN/ASSIGN, unsold $987,654 never counted), E-W |
+| R-WIN-04 private data hidden from the audience | CONFIRMED | request §3 | `publicSnapshot`, separate Socket.IO rooms (`auction:<id>:org` / `:pub`), public letter endpoint gated by `revealVisibility` | I-W (every public socket/API payload scanned before the reveal; letters 404), E-W (display text) |
+| R-WIN-05 Start Final Reveal, 5 steps, visible totals | CONFIRMED | request §4 | engine `START_REVEAL/REVEAL_NEXT/REVEAL_BACK/RESTART_REVEAL`, `revealView`, `components/display/reveal.tsx`, `components/admin/reveal-console.tsx` | I-W (each step's public payload), E-W (keyboard → steps on the display) |
+| R-WIN-06 final leaderboard, winner highlight | CONFIRMED | request §4 | `FinalLeaderboard` | E-W |
+| R-WIN-07 ties | CONFIRMED | request §5 | `rankStandings` | U-W |
+| R-WIN-08 preserved on refresh | CONFIRMED | request §5 | state in PostgreSQL (`auctions.reveal_*`) | I-W (server restart), E-W (projector reload) |
+| R-WIN-09 disqualified teams unranked | INFERRED | 06:53–07:08 | `rankStandings` | U-W, I-W |
+| R-WIN-10 order, readiness gate, freeze, back/restart | PROPOSED | — | `START_REVEAL` checks, `assertBeforeReveal`, override guard | I-W |

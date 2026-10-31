@@ -1,6 +1,6 @@
 # API Specification (REST, JSON)
 
-Base path `/api`. Money fields are **integers in thousands** (1000 = $1M). Organizer endpoints need the session cookie `tpl_session` and, for non-GET requests, the header `x-tpl-request: 1` (CSRF guard). Errors always have the shape:
+Base path `/api`. Money fields (auction credits) are **integers in thousands** (1000 = $1M). `annualSalary` is different: **whole US dollars** per year, excluding bonuses. Organizer endpoints need the session cookie `tpl_session` and, for non-GET requests, the header `x-tpl-request: 1` (CSRF guard). Errors always have the shape:
 ```json
 { "error": { "code": "EXCEEDS_MAX_BID", "message": "Delhi Dynamos can bid at most $23M (remaining purse $25M minus $2M kept for the minimum squad of 3).", "details": null } }
 ```
@@ -10,8 +10,9 @@ Common status codes: 400 `VALIDATION_FAILED` (details = `[{path, message}]`), 40
 | Method | Path | Response |
 |---|---|---|
 | GET | `/health` | `{ok, time}` (checks the DB) |
-| GET | `/public/auctions/:slug` | `LiveSnapshot` |
-| GET | `/public/auctions/:slug/squads` | `{squads: {teamId: [{name, price}]}}` |
+| GET | `/public/auctions/:slug` | **public** `LiveSnapshot` — never contains `private`; `reveal` carries only what the final reveal has reached |
+| GET | `/public/auctions/:slug/squads` | `{squads: {teamId: [{name, price}]}}` (tweaked names and credits only) |
+| GET | `/public/auctions/:slug/reveal/:playerId/offer-letter` | the offer letter, **only** once the reveal has reached that profile's "offer letter" step (otherwise 404). `Content-Disposition: inline; filename="offer-letter.<ext>"`, `Cache-Control: private, no-store`, `X-Robots-Tag: noindex` |
 | GET | `/uploads/:file` | image (UUID file names only, `nosniff`, immutable cache) |
 
 ## Auth
@@ -26,14 +27,14 @@ Common status codes: 400 `VALIDATION_FAILED` (details = `[{path, message}]`), 40
 |---|---|---|
 | GET | `/auctions` | list with `teamCount`, `playerCount`, `soldCount` |
 | POST | `/auctions` | `{name}` → 201 `{auction}` (defaults: $25M, $1M, step $1M, squad 3–9) |
-| GET | `/auctions/:id` | `{auction, counts, issues:{blocking, warnings}}` |
+| GET | `/auctions/:id` | `{auction, counts, readiness:{profiles, withSalary, verified, withLetter, withOriginalName, warnings[]}, issues:{blocking, warnings}}` |
 | PUT | `/auctions/:id/settings` | `{name, currencySymbol, purse, basePrice, bidIncrement, minSquad, maxSquad, timerEnabled, timerSeconds (5–600), poolOrder: RANDOM\|SEQUENTIAL, roles[]}`. After lock, money/squad fields → 409 `CONFIG_LOCKED` |
-| POST | `/auctions/:id/clone` | `{name}` → 201 (settings, teams, candidates, images; no results) |
+| POST | `/auctions/:id/clone` | `{name}` → 201 (settings, teams, candidates incl. original names/salaries/letters, images; no results) |
 | DELETE | `/auctions/:id` | 409 `AUCTION_LIVE` while live/paused |
 | POST | `/auctions/:id/lock` | 409 `SETUP_INCOMPLETE` (details = issues); `{ok, warnings}` |
 | POST | `/auctions/:id/unlock` | LOCKED → DRAFT |
-| POST | `/auctions/:id/reset` | wipe bids/results → LOCKED |
-| GET | `/auctions/:id/snapshot` | `LiveSnapshot` |
+| POST | `/auctions/:id/reset` | wipe bids/results and the reveal → LOCKED (private profile data kept) |
+| GET | `/auctions/:id/snapshot` | organizer `LiveSnapshot` **with** `private` (hidden totals, profiles, reveal readiness) |
 | POST | `/auctions/:id/commands` | **Live command** (below) → `{snapshot, duplicate}` |
 
 ## Live commands — `POST /auctions/:id/commands`
@@ -53,6 +54,10 @@ Every body carries `type` and a client-generated `commandId` (UUID). Re-sending 
 | `RESTART_TIMER` | — | LIVE, countdown on | `TIMER_DISABLED` |
 | `END_AUCTION` | — | LIVE/PAUSED, no open lot | `LOT_OPEN` |
 | `ANNOUNCE` | `text` (≤160, empty clears) | LOCKED/LIVE/PAUSED | — |
+| `START_REVEAL` | — | COMPLETED, reveal NOT_STARTED, every purchased profile has a salary | `REVEAL_ALREADY_STARTED`, `REVEAL_NOT_READY` (details = `{blocking, warnings}`) |
+| `REVEAL_NEXT` | — | COMPLETED, reveal IN_PROGRESS (after the last step → COMPLETE) | `REVEAL_NOT_STARTED`, `REVEAL_COMPLETE` |
+| `REVEAL_BACK` | — | COMPLETED, reveal IN_PROGRESS/COMPLETE | `REVEAL_NOT_STARTED`, `REVEAL_AT_START` |
+| `RESTART_REVEAL` | — | COMPLETED, reveal started | `REVEAL_NOT_STARTED` |
 
 ## Teams
 | Method | Path | Body |
@@ -67,21 +72,23 @@ Every body carries `type` and a client-generated `commandId` (UUID). Re-sending 
 ## Candidates
 | Method | Path | Body |
 |---|---|---|
-| GET | `/auctions/:id/players` | `{players: PlayerView[]}` |
-| POST | `/auctions/:id/players` | `{name, role, description (≤4000, kept verbatim), basePrice?, photoUrl? (http/https), number?}` — DRAFT only |
+| GET | `/auctions/:id/players` | `{players: PrivatePlayerView[]}` (adds `originalName`, `annualSalary`, `salaryVerified`, `letter:{url, kind, fileName}`) |
+| POST | `/auctions/:id/players` | `{name (tweaked name), role, description (≤4000, kept verbatim), basePrice?, photoUrl? (http/https), number?, originalName?, annualSalary? (whole USD 1–100,000,000), salaryVerified?}` — DRAFT only |
 | POST | `/auctions/:id/players/import` | multipart `file` (.xlsx/.csv); all-or-nothing; 400 `IMPORT_INVALID` with `[{row, message}]` |
 | GET | `/players-template.xlsx` | template |
-| PUT | `/players/:playerId` | as create; number/base price need DRAFT |
+| PUT | `/players/:playerId` | as create; number/base price need DRAFT. Private fields: omitted = unchanged, `null` = clear; changing them after the reveal started → 409 `REVEAL_STARTED`; a changed salary is un-verified unless `salaryVerified` is sent |
 | DELETE | `/players/:playerId` | DRAFT only |
 | POST / DELETE | `/players/:playerId/photo` | multipart `file` |
-| POST | `/players/:playerId/override` | `{action:"ASSIGN", teamId, amount}` · `{action:"RETURN_TO_POOL"}` · `{action:"DISQUALIFY"}` · `{action:"REINSTATE"}` — LOCKED/LIVE/PAUSED, not the candidate on the block |
+| GET | `/players/:playerId/offer-letter` | the letter (organizer only) |
+| POST / DELETE | `/players/:playerId/offer-letter` | multipart `file`: PDF/PNG/JPG/WEBP ≤ 10 MB, magic-byte checked (400 `UNSUPPORTED_LETTER`, `FILE_TOO_LARGE`); 409 `REVEAL_STARTED` during the reveal |
+| POST | `/players/:playerId/override` | `{action:"ASSIGN", teamId, amount}` · `{action:"RETURN_TO_POOL"}` · `{action:"DISQUALIFY"}` · `{action:"REINSTATE"}` — LOCKED/LIVE/PAUSED, and COMPLETED until the reveal starts (then a cancelled purchase becomes UNSOLD and disqualification flags are recomputed); not the candidate on the block; 409 `REVEAL_STARTED` during the reveal |
 
 ## Results & reports
 | Method | Path | Response |
 |---|---|---|
-| GET | `/auctions/:id/results` | teams with squads, unsold, pool, disqualified, totals |
+| GET | `/auctions/:id/results` | `reveal`, salary `standings` (ranked), `revealCheck`, teams with squads (private views), unsold, pool, disqualified, totals |
 | GET | `/auctions/:id/bids` | lots with all bids (incl. undone) |
 | GET | `/auctions/:id/audit` | latest 400 audit entries |
-| GET | `/auctions/:id/export.xlsx` | Summary · Squads · Unsold & Pool · Bid History |
+| GET | `/auctions/:id/export.xlsx` | Summary (incl. winner) · Winner (Salary Totals) · Squads (incl. original names, salaries, letters) · Unsold & Pool · Bid History |
 
 `LiveSnapshot` and all view types are defined in `src/shared/types.ts`.

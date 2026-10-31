@@ -1,6 +1,6 @@
 # Game Rules — TechSara Placement League
 
-Each rule names its source in the client video (`game building auction.mp4`, mm:ss) and its classification:
+Each rule names its source — the client video (`game building auction.mp4`, mm:ss) or the client's written request of **1 Nov 2026** ("winner = combined actual offer amounts", section 9) — and its classification:
 **CONFIRMED** (stated or demonstrated) · **INFERRED** (strongly implied by the reference flow the client asked to replicate) · **PROPOSED** (engineering safeguard) · **UNRESOLVED** (needs the client).
 
 ## 1. What the game is
@@ -65,7 +65,48 @@ Check: empty team → 25 − 1 × 2 = **$23M** (screen 03:51). After buying one 
 |---|---|---|---|
 | E1 | The auction ends when the organizer ends it (normally after all candidates are processed). | 06:53–07:08 ("20 candidates खतम") | CONFIRMED |
 | E2 | **Teams with fewer than the minimum (3) candidates are disqualified.** | 06:53–07:08 | CONFIRMED |
-| E3 | What disqualification means for prizes/ranking, and how a league winner is determined, was **not stated**. The app declares **no winner**; it shows final squads with Qualified / Disqualified. | — | UNRESOLVED (Q-01, Q-07) |
+| E3 | How the league winner is determined — **resolved by the client on 1 Nov 2026**: see section 9. | client request 1 Nov 2026 | CONFIRMED |
+| E4 | A disqualified team (below the minimum squad) is **not ranked and cannot win**; it is listed last on the final leaderboard. The client only said such teams are "disqualified"; prizes or other consequences remain open. | 06:53–07:08 + section 9 | INFERRED (Q-07 open for prizes) |
 
 ## 8. What the screen shows (CONFIRMED unless marked)
 Candidate photo, name, role, full point-wise description (01:53–03:05, 03:59–04:11); current bid and the team bidding (02:19–02:35, 04:29–04:47); the team list with max bid / purse / squad, leading team on top (05:06–05:35; columns visible 03:51); round, pool and sold counts (07:26–08:00); SOLD with the buying team (04:47–05:02). Ticker, multiple of base price, final squads board — INFERRED/PROPOSED.
+
+## 9. Winner and Final Reveal (client request, 1 Nov 2026)
+Source: the client's written request "Please update TechSara Placement League so that the winner is decided by the combined actual offer amounts of the profiles each team purchases." Every rule below is **CONFIRMED** (stated in that request) unless marked otherwise.
+
+### Scoring
+| # | Rule | Class |
+|---|---|---|
+| W1 | Team score = the **sum of the actual annual salaries** written in the original offer letters of the profiles the team purchased. | CONFIRMED |
+| W2 | The team with the highest combined amount wins. Example: Team A — 3 profiles, $431,000 · Team B — 4 profiles, $400,000 → **Team A wins**. | CONFIRMED |
+| W3 | The number of profiles purchased does **not** decide the winner. | CONFIRMED |
+| W4 | Auction credits are only for bidding; they are **never deducted** from the salary total. | CONFIRMED |
+| W5 | Salary = **annual, in USD, excluding bonuses**, applied consistently to every profile, and verified against the letter before the event. | CONFIRMED |
+| W6 | Each purchased profile counts **once**; unsold profiles are excluded; a bid that has not ended in SOLD never counts. | CONFIRMED |
+| W7 | Corrections or cancellations update **both** the team's credits and its hidden salary total. | CONFIRMED |
+| W8 | Tie on the combined amount → the team with **more auction credits remaining** wins; if still tied → **joint winners** (they share rank 1; the next team is rank 3). | CONFIRMED |
+| W9 | A team disqualified for missing the minimum squad is not ranked and cannot win (see E4). | INFERRED |
+| W10 | A team with a combined amount of $0 cannot be the winner. | PROPOSED (edge case) |
+
+### Per profile (20 profiles at the event)
+Tweaked name shown during bidding · original candidate name · actual offer letter (PDF or image) · verified annual salary from that letter · purchasing team · final purchase price in auction credits. — CONFIRMED
+
+### Visibility
+| # | Rule | Class |
+|---|---|---|
+| V1 | During bidding the audience sees only the tweaked profile, its clues (description), the current bid, the purchasing team and remaining credits. | CONFIRMED |
+| V2 | Hidden until the final reveal: original name, offer letter, actual salary, each team's combined salary total, salary rankings. | CONFIRMED |
+| V3 | Totals are calculated automatically throughout the auction (on every SOLD and every correction) but shown only in the organizer's private views. | CONFIRMED |
+| V4 | The organizer's private views are masked by default on the live console (one click to show) so a shared laptop screen does not leak them. | PROPOSED |
+
+### Final Reveal
+| # | Rule | Class |
+|---|---|---|
+| R1 | After bidding ends, the operator selects **Start Final Reveal**. | CONFIRMED |
+| R2 | For each purchased profile, in order: **tweaked name → original candidate name → actual offer letter → annual salary → purchasing team**. | CONFIRMED |
+| R3 | Each salary is added to its team's **visible** total as it is revealed (at the "purchasing team" step, when the audience learns which team it belongs to). | CONFIRMED (timing within the profile: INFERRED) |
+| R4 | Profiles are revealed in **purchase order** (the order in which they were sold). | PROPOSED (the client did not specify an order) |
+| R5 | The reveal ends with a leaderboard: **Team · Profiles purchased · Combined annual offer amount · Rank**, with the winner highlighted. | CONFIRMED |
+| R6 | The reveal cannot start while a purchased profile has no salary; missing letters, missing original names and unverified salaries are shown as warnings. | PROPOSED |
+| R7 | While the reveal runs, purchases and private details are frozen; the operator can go back a step or restart the reveal (which hides everything again and re-enables corrections). | PROPOSED |
+| R8 | Purchases, totals and the reveal position survive a refresh or a server restart. | CONFIRMED |

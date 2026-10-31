@@ -1,18 +1,22 @@
 "use client";
 
-import { Download, History, ScrollText, Trophy } from "lucide-react";
+import { Download, Eye, EyeOff, History, Lock, ScrollText, Trophy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useAuction } from "@/components/admin/auction-context";
+import { SalaryLeaderboard, usePrivateToggle } from "@/components/admin/hidden-totals";
 import { PlayerPhoto, TeamLogo } from "@/components/media";
 import { Button } from "@/components/ui/button";
 import { Badge, Spinner, Stat } from "@/components/ui/misc";
 import { api, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { formatMoney } from "@/shared/money";
-import type { PlayerView, TeamView } from "@/shared/types";
+import { formatMoney, formatUsd } from "@/shared/money";
+import type { PrivatePlayerView as PlayerView, RevealStatus, TeamStanding, TeamView } from "@/shared/types";
 
 interface Results {
+  reveal: { status: RevealStatus };
+  standings: TeamStanding[];
+  revealCheck: { blocking: string[]; warnings: string[] };
   teams: (TeamView & { belowMinimum: boolean; players: PlayerView[] })[];
   unsold: PlayerView[];
   pool: PlayerView[];
@@ -44,6 +48,7 @@ export default function ResultsPage() {
   const [results, setResults] = useState<Results | null>(null);
   const [lots, setLots] = useState<LotRow[] | null>(null);
   const [audit, setAudit] = useState<AuditRow[] | null>(null);
+  const [showPrivate, togglePrivate] = usePrivateToggle("tpl.results.showPrivate", true);
 
   useEffect(() => {
     api.get<Results>(`/auctions/${id}/results`).then(setResults, (e) => toast.error(errorMessage(e)));
@@ -64,6 +69,8 @@ export default function ResultsPage() {
   const money = (k: number | null) => formatMoney(k, a.currencySymbol);
   const teamName = (tid: string | null) => snapshot.teams.find((t) => t.id === tid)?.name ?? "—";
   const completed = a.status === "COMPLETED";
+  const final = completed && results.revealCheck.blocking.length === 0;
+  const winners = results.standings.filter((x) => x.winner);
 
   return (
     <div className="space-y-5">
@@ -111,6 +118,49 @@ export default function ResultsPage() {
 
       {tab === "squads" && (
         <>
+          <section className="panel p-5" data-testid="results-salary">
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <h2 className="flex items-center gap-2 text-xs font-bold tracking-widest text-gold-400 uppercase">
+                <Lock className="size-3.5" /> Winner — combined actual annual salary of purchased profiles
+              </h2>
+              <Badge tone={results.reveal.status === "COMPLETE" ? "green" : "neutral"}>
+                {results.reveal.status === "COMPLETE"
+                  ? "Revealed to the audience"
+                  : results.reveal.status === "IN_PROGRESS"
+                    ? "Reveal running"
+                    : "Hidden from the audience"}
+              </Badge>
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={togglePrivate} aria-pressed={showPrivate}>
+                {showPrivate ? <EyeOff className="size-4" /> : <Eye className="size-4" />} {showPrivate ? "Hide" : "Show"} salaries
+              </Button>
+            </div>
+            {showPrivate ? (
+              <>
+                {winners.length > 0 && (
+                  <p className="mb-3 text-sm text-ink-200">
+                    <Trophy className="mr-1 inline size-4 text-gold-300" />
+                    {final ? (winners.length > 1 ? "Joint winners: " : "Winner: ") : "Current leader (not final): "}
+                    <b className="text-white">{winners.map((w) => teamName(w.teamId)).join(" & ")}</b> — {formatUsd(winners[0].total)} combined annual offers
+                  </p>
+                )}
+                <SalaryLeaderboard
+                  standings={results.standings}
+                  teams={snapshot.teams}
+                  currencySymbol={a.currencySymbol}
+                  final={final}
+                  testId="results-leaderboard"
+                />
+                {results.revealCheck.blocking.length > 0 && completed && (
+                  <p className="mt-3 text-xs text-loss-400">Not final: {results.revealCheck.blocking.join("; ")}</p>
+                )}
+                <p className="mt-2 text-[11px] text-ink-400">
+                  Only confirmed purchases count. Tie → more credits remaining wins; still tied → joint winners. Teams below the minimum squad are not ranked.
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-ink-400">Salaries hidden on this screen.</p>
+            )}
+          </section>
           <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
             {results.teams.map((t) => (
               <article key={t.id} className="panel overflow-hidden" data-testid="result-team">
@@ -156,6 +206,14 @@ export default function ResultsPage() {
                         <PlayerPhoto name={p.name} url={p.photoUrl} className="size-8" rounded="rounded-md" />
                         <span className="min-w-0 flex-1 truncate text-ink-100">
                           #{p.number} {p.name}
+                          {showPrivate && (
+                            <span className="block truncate text-xs text-ink-400">
+                              {p.originalName ?? "no original name"} ·{" "}
+                              <b className={p.annualSalary == null ? "text-amber-300" : "text-gold-300"}>
+                                {p.annualSalary == null ? "no salary" : `${formatUsd(p.annualSalary)}/yr`}
+                              </b>
+                            </span>
+                          )}
                         </span>
                         <span className="text-xs text-ink-400">R{p.soldRound}</span>
                         <b className="font-display text-white tabular-nums">{money(p.soldPrice)}</b>

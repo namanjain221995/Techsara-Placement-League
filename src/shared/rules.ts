@@ -167,3 +167,51 @@ export function setupIssues(input: { teamCount: number; playerCount: number; pur
     warnings.push(`${input.playerCount} candidates exceed total squad capacity (${input.teamCount * cfg.maxSquad}); some will stay unsold.`);
   return { blocking, warnings };
 }
+
+/**
+ * Winner (client request, 1 Nov 2026): the team whose purchased profiles have the highest
+ * COMBINED ACTUAL ANNUAL SALARY wins. The number of profiles does not matter and auction
+ * credits are never subtracted from the salary total.
+ * Ties: more auction credits remaining wins; if still tied, the teams are joint winners
+ * (they share the rank — competition ranking 1, 1, 3).
+ * Teams disqualified for missing the minimum squad cannot win; they are listed last, unranked.
+ */
+export interface StandingInput {
+  teamId: string;
+  profiles: number;
+  total: number;
+  creditsLeft: number;
+  disqualified: boolean;
+}
+
+export function rankStandings<T extends StandingInput>(rows: T[]): (T & { rank: number | null; winner: boolean })[] {
+  const better = (a: StandingInput, b: StandingInput) => b.total - a.total || b.creditsLeft - a.creditsLeft;
+  const eligible = rows.filter((r) => !r.disqualified).sort(better);
+  const out = eligible.map((r) => {
+    const rank = 1 + eligible.filter((o) => better(o, r) < 0).length;
+    // Nobody "wins" with nothing: a winner needs a positive combined salary.
+    return { ...r, rank, winner: rank === 1 && r.total > 0 } as T & { rank: number | null; winner: boolean };
+  });
+  const dq = rows
+    .filter((r) => r.disqualified)
+    .sort(better)
+    .map((r) => ({ ...r, rank: null, winner: false }) as T & { rank: number | null; winner: boolean });
+  return [...out, ...dq];
+}
+
+export const REVEAL_LAST_STEP = 4;
+
+/**
+ * How much of the final reveal is public: profiles before `index` are fully revealed; the
+ * current one shows fields up to `step`; everything is public once the reveal is COMPLETE.
+ */
+export function revealVisibility(status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETE", order: string[], index: number, step: number) {
+  const visibleStep = (playerId: string): number => {
+    if (status === "COMPLETE") return REVEAL_LAST_STEP;
+    if (status !== "IN_PROGRESS") return -1;
+    const at = order.indexOf(playerId);
+    if (at < 0 || at > index) return -1;
+    return at < index ? REVEAL_LAST_STEP : step;
+  };
+  return { visibleStep };
+}

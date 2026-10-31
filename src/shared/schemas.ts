@@ -62,6 +62,21 @@ export const playerSchema = z.object({
     .nullable()
     .optional(),
   number: z.int().min(1).max(9999).optional(),
+  // Hidden until the final reveal (organizer only). Undefined = leave unchanged, null = clear.
+  originalName: z
+    .string()
+    .trim()
+    .max(120, "Max 120 characters")
+    .transform((v) => v || null)
+    .nullable()
+    .optional(),
+  annualSalary: z
+    .int("Whole US dollars, e.g. 120000")
+    .min(1, "Must be greater than zero")
+    .max(100_000_000, "Check the amount (max $100,000,000)")
+    .nullable()
+    .optional(),
+  salaryVerified: z.boolean().optional(),
 });
 export type PlayerInput = z.infer<typeof playerSchema>;
 
@@ -85,6 +100,10 @@ export const liveCommandSchema = z.discriminatedUnion("type", [
   cmd("RESTART_TIMER", {}),
   cmd("END_AUCTION", {}),
   cmd("ANNOUNCE", { text: z.string().trim().max(160) }),
+  cmd("START_REVEAL", {}),
+  cmd("REVEAL_NEXT", {}),
+  cmd("REVEAL_BACK", {}),
+  cmd("RESTART_REVEAL", {}),
 ]);
 export type LiveCommand = z.infer<typeof liveCommandSchema>;
 

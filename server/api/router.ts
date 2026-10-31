@@ -15,12 +15,14 @@ import {
 } from "../../src/shared/schemas";
 import { authenticate, clearSessionCookie, createSession, csrfGuard, destroySession, requireAdmin, SESSION_COOKIE, setSessionCookie } from "../auth/auth";
 import { getDb } from "../db";
-import { auctions } from "../db/schema";
+import { auctions, players } from "../db/schema";
 import { getEngine } from "../engine/instance";
+import { publicSnapshot } from "../engine/snapshot";
+import { revealVisibility } from "../../src/shared/rules";
 import type { AuditActor } from "../services/audit";
 import * as catalog from "../services/catalog";
 import * as sheets from "../services/spreadsheets";
-import { imageUpload, saveImage, serveUpload } from "../services/uploads";
+import { imageUpload, letterUpload, saveImage, saveOfferLetter, sendOfferLetter, serveUpload } from "../services/uploads";
 import { badRequest, notFound } from "../util/errors";
 
 const uuid = z.uuid();
@@ -36,6 +38,17 @@ const upload = (req: Request, res: Response) =>
       if (!err) return resolve();
       const code = (err as { code?: string }).code;
       reject(code === "LIMIT_FILE_SIZE" ? badRequest("FILE_TOO_LARGE", "Images must be 3 MB or smaller.") : badRequest("UPLOAD_FAILED", "Upload failed."));
+    }),
+  );
+
+const uploadLetter = (req: Request, res: Response) =>
+  new Promise<void>((resolve, reject) =>
+    letterUpload(req, res, (err: unknown) => {
+      if (!err) return resolve();
+      const code = (err as { code?: string }).code;
+      reject(
+        code === "LIMIT_FILE_SIZE" ? badRequest("FILE_TOO_LARGE", "Offer letters must be 10 MB or smaller.") : badRequest("UPLOAD_FAILED", "Upload failed."),
+      );
     }),
   );
 
@@ -56,7 +69,20 @@ export function apiRouter(): Router {
     const slug = String(req.params.slug).slice(0, 120);
     const [a] = await getDb().select({ id: auctions.id }).from(auctions).where(eq(auctions.slug, slug)).limit(1);
     if (!a) throw notFound("Auction");
-    res.set("Cache-Control", "no-store").json(await getEngine().snapshot(a.id));
+    // Never the organizer snapshot: original names, salaries and letters stay hidden until revealed.
+    res.set("Cache-Control", "no-store").json(publicSnapshot(await getEngine().snapshot(a.id)));
+  });
+
+  /** An offer letter, only once the final reveal has reached its "offer letter" step for that profile. */
+  r.get("/public/auctions/:slug/reveal/:playerId/offer-letter", async (req, res) => {
+    const slug = String(req.params.slug).slice(0, 120);
+    const playerId = param(req, "playerId");
+    const [a] = await getDb().select().from(auctions).where(eq(auctions.slug, slug)).limit(1);
+    if (!a || a.status !== "COMPLETED") throw notFound("Offer letter");
+    if (revealVisibility(a.revealStatus, a.revealOrder, a.revealIndex, a.revealStep).visibleStep(playerId) < 2) throw notFound("Offer letter");
+    const [p] = await getDb().select().from(players).where(eq(players.id, playerId)).limit(1);
+    if (!p || p.auctionId !== a.id || p.status !== "SOLD") throw notFound("Offer letter");
+    sendOfferLetter(res, { path: p.offerLetterPath, type: p.offerLetterType, name: null });
   });
 
   /** Bought candidates per team for the public final board (names + prices only). */
@@ -64,9 +90,7 @@ export function apiRouter(): Router {
     const slug = String(req.params.slug).slice(0, 120);
     const [a] = await getDb().select({ id: auctions.id }).from(auctions).where(eq(auctions.slug, slug)).limit(1);
     if (!a) throw notFound("Auction");
-    const data = await sheets.resultsData(getDb(), a.id);
-    const squads = Object.fromEntries(data.teams.map((t) => [t.id, t.players.map((p) => ({ name: p.name, price: p.soldPrice }))]));
-    res.set("Cache-Control", "no-store").json({ squads });
+    res.set("Cache-Control", "no-store").json({ squads: await sheets.publicSquads(getDb(), a.id) });
   });
 
   // ---------------------------------------------------------------------------- auth
@@ -215,6 +239,21 @@ export function apiRouter(): Router {
   });
   a.delete("/players/:playerId/photo", async (req, res) => {
     await catalog.setPlayerPhoto(getEngine(), actor(req), param(req, "playerId"), null, getDb());
+    res.json({ ok: true });
+  });
+  a.get("/players/:playerId/offer-letter", async (req, res) => {
+    const p = await catalog.playerOr404(getDb(), param(req, "playerId"));
+    sendOfferLetter(res, { path: p.offerLetterPath, type: p.offerLetterType, name: p.offerLetterName });
+  });
+  a.post("/players/:playerId/offer-letter", async (req, res) => {
+    const id = param(req, "playerId");
+    await catalog.playerOr404(getDb(), id);
+    await uploadLetter(req, res);
+    await catalog.setOfferLetter(getEngine(), actor(req), id, saveOfferLetter(req.file), getDb());
+    res.json({ ok: true });
+  });
+  a.delete("/players/:playerId/offer-letter", async (req, res) => {
+    await catalog.setOfferLetter(getEngine(), actor(req), param(req, "playerId"), null, getDb());
     res.json({ ok: true });
   });
   a.post("/players/:playerId/override", async (req, res) => {

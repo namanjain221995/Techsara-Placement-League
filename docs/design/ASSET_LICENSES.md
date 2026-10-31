@@ -15,6 +15,9 @@
 
 **No photographs or third-party images are bundled.** Stock-photo sites (Unsplash, Pexels, Wikimedia) were unreachable from the build environment's network allow-list, and none were needed: every visual is drawn in code, so there is nothing to license or attribute. Organizers upload their own team logos and candidate photos; they are responsible for having the right to use them.
 
+## Sample offer letters (tests and screenshots)
+`tests/fixtures/sample-offer-letter.png` and the letters visible in `docs/screenshots/display-reveal-*.png` were generated for this project with Pillow and the DejaVu Sans font (Bitstream Vera licence). Companies and people on them are invented, and every letter carries a "SAMPLE - FICTIONAL" watermark and a "not a real offer letter" footer. Real offer letters uploaded by the organizer are the organizer's responsibility (consent of the candidates, redaction of private details).
+
 ## Not used (deliberately)
 - CricSmart branding, layouts, illustrations or code.
 - IPL/franchise names and logos (visible in the client's reference event). Test and screenshot data use invented names (Code Crusaders, Hire Hawks, Offer Owls, Pipeline Panthers, Recruit Rockets); see open question Q-03 before using real franchise names on a public screen.

@@ -19,7 +19,7 @@ Last updated: 31 Oct 2026 — **all phases complete**. Nothing is in progress; o
 | 11 Delivery docs | ✅ | README, guides, test report, coverage, limitations, `docs/FINAL_DELIVERY_REPORT.md` |
 
 ## Outstanding — client decisions (not built, nothing invented)
-Q-01 winner/scoring · Q-02 phone bidding by teams · Q-04 auto-sell at time-up · Q-06 bold text in descriptions (unclear audio 06:18–06:36) · Q-07 consequences of disqualification. Details: `docs/KNOWN_LIMITATIONS.md`.
+Q-02 phone bidding by teams · Q-04 auto-sell at time-up · Q-06 bold text in descriptions (unclear audio 06:18–06:36) · Q-07 consequences of disqualification beyond ranking · Q-09 reveal order · Q-10 salary/team step order. (Q-01 winner: answered 1 Nov 2026 and built.) Details: `docs/KNOWN_LIMITATIONS.md`.
 
 ## Suggested next steps
 1. Client answers Q-01…Q-08.
@@ -37,3 +37,18 @@ npm install && npm run setup && npm run build && npm start   # run (http://local
 npm run dev                                                   # develop
 npm run typecheck && npm run lint && npm test && npm run test:e2e
 ```
+
+## 1 Nov 2026 — winner by combined actual offers + Final Reveal (client request)
+- [x] Schema + migration `0001_hidden_salary_reveal.sql` (player private fields, auction reveal state)
+- [x] Shared rules: `rankStandings` (salary, credits tiebreak, joint winners, DQ unranked), `revealVisibility`, `parseUsd`/`formatUsd`
+- [x] Snapshot split: organizer `private` view vs `publicSnapshot`; separate Socket.IO rooms; public REST sanitized
+- [x] Engine: `START_REVEAL`, `REVEAL_NEXT`, `REVEAL_BACK`, `RESTART_REVEAL`; corrections after the end (until the reveal), DQ recomputed
+- [x] Offer-letter storage (`UPLOAD_DIR/private`), organizer + reveal-gated public endpoints
+- [x] Candidates page private box, readiness bar, import/export/template, clone, reset, audit without amounts
+- [x] Live console: hidden totals panel, lot strip, Final Reveal console with keyboard steps
+- [x] Display: "Final reveal coming up", step-by-step reveal with letter, running totals, final leaderboard
+- [x] Results page salary leaderboard; overview checklist + warnings
+- [x] Tests: unit 12, integration 3 (incl. leak scan of every public payload, server restart), E2E 1 — all suites green
+- [x] Docs: rules §9, requirements 3.8, coverage, traceability, guides, API/DB/realtime/security, limitations, test report, delivery report
+- [ ] Client to confirm Q-07 (DQ teams unranked), Q-09 (reveal order), Q-10 (salary/team step order)
+- [ ] Organizer to enter the 20 real salaries, original names and offer letters before the event

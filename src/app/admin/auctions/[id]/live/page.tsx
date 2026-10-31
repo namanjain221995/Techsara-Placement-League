@@ -25,6 +25,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuction } from "@/components/admin/auction-context";
 import { CustomBidDialog } from "@/components/admin/custom-bid-dialog";
+import { HiddenTotalsPanel, LotPrivateDetails, usePrivateToggle } from "@/components/admin/hidden-totals";
+import { RevealConsole } from "@/components/admin/reveal-console";
 import { Description } from "@/components/description";
 import { PlayerPhoto, TeamLogo } from "@/components/media";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,7 @@ export default function LiveConsolePage() {
   const [pickOpen, setPickOpen] = useState(false);
   const [stakeState, setStakeState] = useState<{ key: string; amount: number } | null>(null);
   const [announce, setAnnounce] = useState("");
+  const [showPrivate, togglePrivate] = usePrivateToggle("tpl.live.showPrivate", false);
 
   const run = useCallback(
     async (cmd: CommandInput, label: string = cmd.type): Promise<boolean> => {
@@ -91,7 +94,7 @@ export default function LiveConsolePage() {
       confirmLabel: "End auction",
       body: (
         <div className="space-y-2">
-          <p>Final squads are published on the display and no more bids are possible.</p>
+          <p>No more bids are possible. The display then shows “Final reveal coming up” until you start the Final Reveal here.</p>
           {below.length > 0 ? (
             <p className="rounded-lg bg-loss-500/10 p-3 text-loss-400 ring-1 ring-loss-500/30">
               {below.map((t) => t.name).join(", ")} {below.length === 1 ? "has" : "have"} fewer than {a.minSquad} candidates and will be <b>disqualified</b>.
@@ -144,6 +147,14 @@ export default function LiveConsolePage() {
       if (document.querySelector("[role=dialog]")) return;
       const k = e.key.toLowerCase();
       const lot = s.lot;
+      if (s.auction.status === "COMPLETED") {
+        // Final reveal: → / N next step, ← / B back.
+        if ((k === "arrowright" || k === "n") && s.reveal.status === "IN_PROGRESS") run({ type: "REVEAL_NEXT" });
+        else if ((k === "arrowleft" || k === "b") && s.reveal.status !== "NOT_STARTED") run({ type: "REVEAL_BACK" });
+        else return;
+        e.preventDefault();
+        return;
+      }
       if (k === "n" && !lot && s.auction.status === "LIVE") run({ type: "NEXT_PLAYER" });
       else if (k === "s" && lot?.currentBid != null) run({ type: "SOLD" });
       else if (k === "z" && lot?.currentBid != null) run({ type: "UNDO_BID" });
@@ -228,11 +239,17 @@ export default function LiveConsolePage() {
       )}
       {a.status === "COMPLETED" && (
         <Notice tone="green">
-          The auction is complete. See the final squads on{" "}
+          Bidding is complete.{" "}
+          {s.reveal.status === "NOT_STARTED"
+            ? "The display shows “Final reveal coming up” — start the Final Reveal below when you are ready."
+            : s.reveal.status === "IN_PROGRESS"
+              ? "The Final Reveal is running on the display — step through it below."
+              : "The final leaderboard is on the display."}{" "}
+          Full results:{" "}
           <Link className="font-semibold underline" href={`/admin/auctions/${id}/results`}>
             Results
-          </Link>{" "}
-          — the display shows the final board.
+          </Link>
+          .
         </Notice>
       )}
       {paused && <Notice tone="amber">Paused — bidding is blocked and the countdown is frozen until you resume.</Notice>}
@@ -240,7 +257,9 @@ export default function LiveConsolePage() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
           {/* ------------------------------------------------------------ the block */}
-          {lot ? (
+          {a.status === "COMPLETED" ? (
+            <RevealConsole snapshot={s} busy={busy} run={run} />
+          ) : lot ? (
             <div className="panel overflow-hidden" data-testid="lot-panel">
               <div className="grid gap-5 p-5 md:grid-cols-[170px_minmax(0,1fr)]">
                 <div className="relative">
@@ -261,6 +280,7 @@ export default function LiveConsolePage() {
                   <h2 className="mt-2 font-display text-3xl leading-tight font-semibold tracking-wide text-white uppercase" data-testid="lot-player-name">
                     {lot.player.name}
                   </h2>
+                  <LotPrivateDetails profile={s.private?.profiles.find((p) => p.id === lot.player.id)} show={showPrivate} />
                   <div className="mt-3 flex flex-wrap items-end gap-x-8 gap-y-3">
                     <div>
                       <div className="text-[11px] font-bold tracking-widest text-ink-400 uppercase">Current bid</div>
@@ -445,6 +465,8 @@ export default function LiveConsolePage() {
             )}
           </div>
 
+          <HiddenTotalsPanel snapshot={s} show={showPrivate} onToggle={togglePrivate} />
+
           <div className="panel p-4">
             <h3 className="mb-3 text-xs font-bold tracking-widest text-ink-300 uppercase">Teams</h3>
             <ul className="space-y-1.5">
@@ -517,6 +539,9 @@ export default function LiveConsolePage() {
               </span>
               <span>
                 <Kbd>P</Kbd>/<Kbd>R</Kbd> pause / resume
+              </span>
+              <span>
+                <Kbd>→</Kbd>/<Kbd>←</Kbd> final reveal
               </span>
             </div>
           </div>

@@ -1,19 +1,40 @@
 "use client";
 
-import { Download, FileSpreadsheet, ImagePlus, LayoutGrid, List, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, Users } from "lucide-react";
+import {
+  BadgeCheck,
+  Download,
+  Eye,
+  EyeOff,
+  FileSpreadsheet,
+  FileText,
+  ImagePlus,
+  LayoutGrid,
+  List,
+  Lock,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  Users,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useAuction } from "@/components/admin/auction-context";
+import { usePrivateToggle } from "@/components/admin/hidden-totals";
 import { Description } from "@/components/description";
 import { PlayerPhoto } from "@/components/media";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, useConfirm } from "@/components/ui/dialog";
 import { Field, Input, MoneyInput, Select, Textarea } from "@/components/ui/form";
 import { Badge, EmptyState, PlayerStatusBadge, Spinner } from "@/components/ui/misc";
 import { api, ApiError, errorMessage, fieldErrors } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { formatMoney, parseMillions, toMillionsString } from "@/shared/money";
-import type { PlayerStatus, PlayerView } from "@/shared/types";
+import { formatMoney, formatUsd, parseMillions, parseUsd, toMillionsString } from "@/shared/money";
+import type { OfferLetterRef, PlayerStatus, PrivatePlayerView } from "@/shared/types";
+
+type PlayerView = PrivatePlayerView;
 
 type Filter = "ALL" | PlayerStatus;
 interface Draft {
@@ -24,7 +45,14 @@ interface Draft {
   basePrice: string;
   photoUrl: string;
   currentPhoto: string | null;
+  // hidden until the final reveal
+  originalName: string;
+  salary: string;
+  salaryVerified: boolean;
+  letter: OfferLetterRef | null;
 }
+
+const PRIVATE_KEY = "tpl.players.showPrivate";
 
 export default function PlayersPage() {
   const { id, snapshot, version } = useAuction();
@@ -35,6 +63,8 @@ export default function PlayersPage() {
   const [view, setView] = useState<"list" | "cards">("list");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [letterFile, setLetterFile] = useState<File | null>(null);
+  const [showPrivate, togglePrivate] = usePrivateToggle(PRIVATE_KEY, true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -52,6 +82,7 @@ export default function PlayersPage() {
           (filter === "ALL" || p.status === filter) &&
           (!q.trim() ||
             p.name.toLowerCase().includes(q.toLowerCase()) ||
+            (p.originalName ?? "").toLowerCase().includes(q.toLowerCase()) ||
             String(p.number) === q.trim() ||
             p.description.toLowerCase().includes(q.toLowerCase())),
       ),
@@ -61,14 +92,34 @@ export default function PlayersPage() {
   if (!snapshot) return <Spinner className="py-20" />;
   const a = snapshot.auction;
   const isDraft = a.status === "DRAFT";
-  const canFix = a.status === "LOCKED" || a.status === "LIVE" || a.status === "PAUSED";
+  const revealLocked = a.revealStatus !== "NOT_STARTED";
+  const canFix = a.status === "LOCKED" || a.status === "LIVE" || a.status === "PAUSED" || (a.status === "COMPLETED" && !revealLocked);
+  const active = (players ?? []).filter((p) => p.status !== "DISQUALIFIED");
+  const ready = {
+    salary: active.filter((p) => p.annualSalary != null).length,
+    verified: active.filter((p) => p.annualSalary != null && p.salaryVerified).length,
+    letter: active.filter((p) => !!p.letter).length,
+    original: active.filter((p) => !!p.originalName).length,
+  };
   const money = (k: number | null) => formatMoney(k, a.currencySymbol);
   const teamName = (tid: string | null) => snapshot.teams.find((t) => t.id === tid)?.name ?? "";
   const counts = (s: Filter) => (players ?? []).filter((p) => s === "ALL" || p.status === s).length;
 
   const openNew = () => {
-    setDraft({ name: "", role: a.roles[0] ?? "All-Rounder", description: "", basePrice: "", photoUrl: "", currentPhoto: null });
+    setDraft({
+      name: "",
+      role: a.roles[0] ?? "All-Rounder",
+      description: "",
+      basePrice: "",
+      photoUrl: "",
+      currentPhoto: null,
+      originalName: "",
+      salary: "",
+      salaryVerified: false,
+      letter: null,
+    });
     setPhotoFile(null);
+    setLetterFile(null);
     setErrors({});
   };
   const openEdit = (p: PlayerView) => {
@@ -81,8 +132,13 @@ export default function PlayersPage() {
       basePrice: p.basePrice ? toMillionsString(p.basePrice) : "",
       photoUrl: uploaded ? "" : (p.photoUrl ?? ""),
       currentPhoto: p.photoUrl,
+      originalName: p.originalName ?? "",
+      salary: p.annualSalary ? String(p.annualSalary) : "",
+      salaryVerified: p.salaryVerified,
+      letter: p.letter,
     });
     setPhotoFile(null);
+    setLetterFile(null);
     setErrors({});
   };
 
@@ -91,6 +147,8 @@ export default function PlayersPage() {
     if (!draft) return;
     const base = draft.basePrice.trim() ? parseMillions(draft.basePrice) : null;
     if (draft.basePrice.trim() && base === null) return setErrors({ basePrice: "Enter millions, e.g. 1.5" });
+    const salary = draft.salary.trim() ? parseUsd(draft.salary) : null;
+    if (draft.salary.trim() && salary === null) return setErrors({ annualSalary: "Whole US dollars, e.g. 120000" });
     setBusy(true);
     try {
       const body = {
@@ -103,11 +161,15 @@ export default function PlayersPage() {
             ? { photoUrl: null }
             : {}),
         ...(isDraft ? { basePrice: base } : {}),
+        ...(revealLocked
+          ? {}
+          : { originalName: draft.originalName.trim() || null, annualSalary: salary, salaryVerified: salary !== null && draft.salaryVerified }),
       };
       const res = draft.id
         ? await api.put<{ player: PlayerView }>(`/players/${draft.id}`, body)
         : await api.post<{ player: PlayerView }>(`/auctions/${id}/players`, body);
       if (photoFile) await api.upload(`/players/${res.player.id}/photo`, photoFile);
+      if (letterFile) await api.upload(`/players/${res.player.id}/offer-letter`, letterFile);
       toast.success(draft.id ? "Candidate updated" : "Candidate added");
       setDraft(null);
       load();
@@ -134,6 +196,15 @@ export default function PlayersPage() {
     );
   };
 
+  const removeLetter = async () => {
+    if (!draft?.id) return;
+    if (!(await confirm({ title: "Remove the offer letter?", tone: "danger", confirmLabel: "Remove" }))) return;
+    await api.del(`/players/${draft.id}/offer-letter`).then(
+      () => setDraft({ ...draft, letter: null }),
+      (e) => toast.error(errorMessage(e)),
+    );
+  };
+
   const previewPhoto = photoFile ? URL.createObjectURL(photoFile) : draft?.photoUrl.trim() || draft?.currentPhoto || null;
 
   return (
@@ -141,7 +212,9 @@ export default function PlayersPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-wide text-white uppercase">Candidates</h1>
-          <p className="text-sm text-ink-300">The people teams bid on. Descriptions keep your points, bullets and line breaks exactly as typed.</p>
+          <p className="text-sm text-ink-300">
+            The profiles teams bid on, shown under their tweaked names. Original names, salaries and offer letters stay hidden until the final reveal.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <a href="/api/players-template.xlsx">
@@ -165,10 +238,25 @@ export default function PlayersPage() {
         </div>
       </div>
 
+      {players && players.length > 0 && (
+        <div className="panel flex flex-wrap items-center gap-x-5 gap-y-2 p-3 text-sm" data-testid="salary-readiness">
+          <span className="flex items-center gap-1.5 text-xs font-bold tracking-widest text-gold-400 uppercase">
+            <Lock className="size-3.5" /> Hidden winner data
+          </span>
+          <ReadyStat label="Annual salaries" n={ready.salary} of={active.length} />
+          <ReadyStat label="Verified" n={ready.verified} of={active.length} />
+          <ReadyStat label="Offer letters" n={ready.letter} of={active.length} />
+          <ReadyStat label="Original names" n={ready.original} of={active.length} />
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={togglePrivate} data-testid="toggle-private">
+            {showPrivate ? <EyeOff className="size-4" /> : <Eye className="size-4" />} {showPrivate ? "Hide" : "Show"} hidden details
+          </Button>
+        </div>
+      )}
+
       <div className="panel flex flex-wrap items-center gap-3 p-3">
         <div className="relative min-w-56 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-400" />
-          <Input className="pl-9" placeholder="Search name, number or description…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="pl-9" placeholder="Search name, original name, number or description…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="flex flex-wrap gap-1" role="tablist">
           {(["ALL", "POOL", "SOLD", "UNSOLD", "DISQUALIFIED"] as Filter[]).map((f) => (
@@ -230,6 +318,7 @@ export default function PlayersPage() {
                   )}
                   {p.basePrice && <Badge>Base {money(p.basePrice)}</Badge>}
                 </div>
+                <PrivateLine p={p} show={showPrivate} />
                 <Description text={p.description} className="mt-1.5 text-sm text-ink-200" />
               </div>
               <div className="flex shrink-0 items-start gap-1">
@@ -267,6 +356,7 @@ export default function PlayersPage() {
                   <h3 className="truncate font-display text-lg font-semibold text-white uppercase">{p.name}</h3>
                   <Badge tone="blue">{p.role}</Badge>
                 </div>
+                <PrivateLine p={p} show={showPrivate} />
                 <Description text={p.description} className="mt-2 flex-1 text-sm text-ink-200" />
                 <div className="mt-3 flex gap-1">
                   <Button size="sm" onClick={() => openEdit(p)}>
@@ -309,8 +399,15 @@ export default function PlayersPage() {
             </div>
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-[1fr_180px]">
-                <Field label="Name" error={errors.name}>
-                  <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={80} required autoFocus />
+                <Field label="Tweaked name (shown during bidding)" error={errors.name}>
+                  <Input
+                    value={draft.name}
+                    onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    maxLength={80}
+                    required
+                    autoFocus
+                    data-testid="name-input"
+                  />
                 </Field>
                 <Field label="Role" error={errors.role}>
                   <Select value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value })}>
@@ -356,6 +453,94 @@ export default function PlayersPage() {
                   <Input value={draft.photoUrl} onChange={(e) => setDraft({ ...draft, photoUrl: e.target.value })} placeholder="https://…" />
                 </Field>
               </div>
+              <fieldset className="space-y-4 rounded-xl bg-gold-500/5 p-4 ring-1 ring-gold-500/30" disabled={revealLocked} data-testid="private-fields">
+                <legend className="flex items-center gap-1.5 px-1 text-[11px] font-bold tracking-widest text-gold-300 uppercase">
+                  <Lock className="size-3.5" /> Hidden until the final reveal · organizer only
+                </legend>
+                {revealLocked && (
+                  <p className="text-xs text-amber-300">
+                    The final reveal has started, so these details are frozen. Restart the reveal in the live console to change them.
+                  </p>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Original candidate name" error={errors.originalName}>
+                    <Input
+                      value={draft.originalName}
+                      onChange={(e) => setDraft({ ...draft, originalName: e.target.value })}
+                      maxLength={120}
+                      placeholder="As on the offer letter"
+                      data-testid="original-name-input"
+                    />
+                  </Field>
+                  <Field
+                    label="Annual salary (USD)"
+                    error={errors.annualSalary}
+                    hint={
+                      parseUsd(draft.salary) !== null
+                        ? `${formatUsd(parseUsd(draft.salary))} per year — base salary from the offer letter, excluding bonuses`
+                        : "Whole US dollars from the actual offer letter, excluding bonuses."
+                    }
+                  >
+                    <Input
+                      value={draft.salary}
+                      onChange={(e) => setDraft({ ...draft, salary: e.target.value, salaryVerified: false })}
+                      inputMode="numeric"
+                      placeholder="e.g. 120000"
+                      data-testid="salary-input"
+                    />
+                  </Field>
+                </div>
+                <label className="flex items-start gap-2.5 text-sm text-ink-100">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 accent-gold-500"
+                    checked={draft.salaryVerified}
+                    disabled={!draft.salary.trim()}
+                    onChange={(e) => setDraft({ ...draft, salaryVerified: e.target.checked })}
+                    data-testid="salary-verified"
+                  />
+                  <span>
+                    I checked this amount against the offer letter.
+                    <span className="block text-xs text-ink-400">Changing the amount clears this tick.</span>
+                  </span>
+                </label>
+                <div>
+                  <div className="mb-1.5 text-xs font-semibold tracking-wide text-ink-300 uppercase">Actual offer letter</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {draft.letter && !letterFile && (
+                      <a
+                        href={draft.letter.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={buttonVariants({ size: "sm", variant: "ghost" })}
+                        data-testid="letter-link"
+                      >
+                        <FileText className="size-4" /> View {draft.letter.kind === "pdf" ? "PDF" : "image"}
+                        {draft.letter.fileName ? ` · ${draft.letter.fileName}` : ""}
+                      </a>
+                    )}
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-ink-700 px-3 py-1.5 text-sm font-semibold text-ink-100 ring-1 ring-ink-500 hover:bg-ink-600">
+                      <Upload className="size-4" /> {draft.letter || letterFile ? "Replace" : "Upload"} letter
+                      <input
+                        type="file"
+                        accept="application/pdf,image/png,image/jpeg,image/webp"
+                        className="sr-only"
+                        onChange={(e) => setLetterFile(e.target.files?.[0] ?? null)}
+                        data-testid="letter-input"
+                      />
+                    </label>
+                    {letterFile && <span className="text-xs text-win-400">{letterFile.name} — uploads when you save</span>}
+                    {draft.letter && !letterFile && draft.id && (
+                      <Button size="sm" variant="ghost" onClick={removeLetter}>
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-ink-400">
+                    PDF, PNG, JPG or WEBP · max 10 MB. Shown to the audience only at its step in the final reveal.
+                  </p>
+                </div>
+              </fieldset>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => setDraft(null)}>
                   Cancel
@@ -422,7 +607,8 @@ function ImportDialog({ open, onOpenChange, auctionId, onDone }: { open: boolean
         className="block w-full text-sm text-ink-200 file:mr-3 file:rounded-lg file:border-0 file:bg-ink-700 file:px-3 file:py-2 file:font-semibold file:text-ink-100"
       />
       <p className="mt-3 text-xs text-ink-400">
-        Columns: Number (optional), Name, Role, Description (line breaks kept), Base Price (M, optional), Photo URL (optional).
+        Columns: Number (optional), Name (tweaked name), Role, Description (line breaks kept), Base Price (M, optional), Photo URL (optional), Original Name,
+        Annual Salary (USD), Salary Verified (Yes/No). Offer letters are uploaded per candidate after importing.
       </p>
       {problems.length > 0 && (
         <ul className="mt-4 max-h-56 space-y-1 overflow-y-auto rounded-lg bg-loss-500/10 p-3 text-xs text-loss-400 ring-1 ring-loss-500/30">
@@ -446,6 +632,7 @@ function CorrectionsDialog({ player, onClose, onDone }: { player: PlayerView; on
   const [busy, setBusy] = useState<string | null>(null);
   const sym = snapshot!.auction.currencySymbol;
   const team = snapshot!.teams.find((t) => t.id === teamId);
+  const ended = snapshot!.auction.status === "COMPLETED";
   const send = async (body: Record<string, unknown>, label: string) => {
     setBusy(label);
     try {
@@ -464,7 +651,7 @@ function CorrectionsDialog({ player, onClose, onDone }: { player: PlayerView; on
       open
       onOpenChange={(o) => !o && onClose()}
       title={`Corrections — ${player.name}`}
-      description="Use only to fix mistakes. Purses and max bids are recalculated automatically."
+      description="Use only to fix mistakes. Credits, max bids and the hidden salary totals are recalculated automatically."
       size="sm"
     >
       <div className="space-y-5">
@@ -493,7 +680,8 @@ function CorrectionsDialog({ player, onClose, onDone }: { player: PlayerView; on
         <div className="flex flex-wrap gap-2">
           {player.status !== "POOL" && (
             <Button loading={busy === "pool"} onClick={() => send({ action: "RETURN_TO_POOL" }, "pool")}>
-              Return to pool{player.status === "SOLD" ? " (refund purse)" : ""}
+              {ended ? (player.status === "SOLD" ? "Cancel purchase (refund credits)" : "Mark unsold") : "Return to pool"}
+              {!ended && player.status === "SOLD" ? " (refund credits)" : ""}
             </Button>
           )}
           {(player.status === "POOL" || player.status === "UNSOLD") && (
@@ -509,5 +697,44 @@ function CorrectionsDialog({ player, onClose, onDone }: { player: PlayerView; on
         </div>
       </div>
     </Dialog>
+  );
+}
+
+function ReadyStat({ label, n, of }: { label: string; n: number; of: number }) {
+  const done = of > 0 && n === of;
+  return (
+    <span className={cn("tabular-nums", done ? "text-win-400" : "text-amber-300")}>
+      {label} <b>{n}</b>/{of}
+    </span>
+  );
+}
+
+/** Organizer-only summary of the hidden data; masked when "Hide hidden details" is on. */
+function PrivateLine({ p, show }: { p: PlayerView; show: boolean }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-testid="private-line">
+      <Lock className="size-3 text-gold-400" />
+      {show ? (
+        <>
+          <span className={p.originalName ? "text-ink-100" : "text-amber-300"}>{p.originalName ?? "No original name"}</span>
+          <span className={cn("tabular-nums", p.annualSalary == null ? "text-amber-300" : "font-semibold text-gold-300")}>
+            {p.annualSalary == null ? "No salary" : `${formatUsd(p.annualSalary)}/yr`}
+          </span>
+        </>
+      ) : (
+        <span className="text-ink-400">Original name & salary hidden</span>
+      )}
+      {p.annualSalary != null &&
+        (p.salaryVerified ? (
+          <span className="flex items-center gap-1 text-win-400">
+            <BadgeCheck className="size-3.5" /> verified
+          </span>
+        ) : (
+          <span className="text-amber-300">not verified</span>
+        ))}
+      <span className={cn("flex items-center gap-1", p.letter ? "text-win-400" : "text-amber-300")}>
+        <FileText className="size-3.5" /> {p.letter ? "letter" : "no letter"}
+      </span>
+    </div>
   );
 }

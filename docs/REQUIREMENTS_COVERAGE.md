@@ -36,6 +36,18 @@ Status: ✅ implemented and verified by automated tests · ☑ implemented, veri
 
 **Confirmed requirement IDs: 35 / 35 implemented** — 33 covered by automated tests; the card view and the photo-upload dialog were checked visually (the upload API itself is integration-tested).
 
+## CONFIRMED by the client (written request, 1 Nov 2026) — winner by combined actual offers
+| ID | Requirement | Status |
+|---|---|---|
+| R-WIN-01 | Score = sum of actual annual salaries (USD, excl. bonuses) of purchased profiles; profile count irrelevant; credits not deducted | ✅ unit + integration (client example $431,000 vs $400,000) |
+| R-WIN-02 | Per profile: tweaked name, original name, offer letter (PDF/image), verified salary, team, price | ✅ integration + E2E |
+| R-WIN-03 | Hidden totals update on SOLD only; corrections/cancellations update credits and totals; unsold excluded | ✅ integration + E2E |
+| R-WIN-04 | Nothing private reaches the audience before the reveal (socket, API, letters) | ✅ integration (every public payload checked) + E2E |
+| R-WIN-05 | Start Final Reveal; 5 steps per profile; salary added to the visible total | ✅ integration + E2E |
+| R-WIN-06 | Final leaderboard with winner highlight | ✅ E2E |
+| R-WIN-07 | Ties: credits remaining, then joint winners | ✅ unit |
+| R-WIN-08 | Preserved on refresh / server restart | ✅ integration (restart) + E2E (refresh) |
+
 ## INFERRED from the demonstrated reference flow
 | ID | Requirement | Status |
 |---|---|---|
@@ -55,4 +67,4 @@ Status: ✅ implemented and verified by automated tests · ☑ implemented, veri
 Server authority, idempotency, serialisation of simultaneous actions, persistence and crash recovery, reconnection, auth/CSRF/audit, responsive projector/phone/4K layouts, reduced motion, keyboard shortcuts, rehearsal reset, optional countdown (never auto-sells), synthesized sound, zero-install embedded PostgreSQL — **all built; server-side items ✅ tested**.
 
 ## UNRESOLVED (not built — see KNOWN_LIMITATIONS.md)
-⏸ Q-01 winner/scoring · ⏸ Q-02 team phone bidding · ⏸ Q-04 auto-sell on time-up · ⏸ Q-06 bold text in descriptions · ⏸ Q-07 consequences of disqualification. (Q-03, Q-05, Q-08 are handled by configurable behaviour.)
+⏸ Q-02 team phone bidding · ⏸ Q-04 auto-sell on time-up · ⏸ Q-06 bold text in descriptions · ⏸ Q-07 consequences of disqualification beyond ranking · ⏸ Q-09 reveal order (purchase order used) · ⏸ Q-10 salary/team step order (as listed by the client). Q-01 (winner) was resolved by the client on 1 Nov 2026. (Q-03, Q-05, Q-08 are handled by configurable behaviour.)

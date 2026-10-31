@@ -94,14 +94,29 @@ Organizer (admin), audience/spectators (live screen, no login). Team members bid
 | R-NFR-05 | Readable on projector / LED wall / laptop / phone; reduced-motion support. | PROPOSED |
 | R-NFR-06 | Runs locally on a Windows laptop with no installs beyond Node.js. | PROPOSED |
 
+### 3.8 Winner by combined actual offers and Final Reveal (client request, 1 Nov 2026)
+All CONFIRMED by the client's written request unless marked; full rules in `GAME_RULES.md` section 9.
+| ID | Requirement | Class |
+|---|---|---|
+| R-WIN-01 | Team score = sum of the actual annual salaries (USD, excluding bonuses) from the original offer letters of its purchased profiles; highest wins; profile count irrelevant; credits never deducted. | CONFIRMED |
+| R-WIN-02 | Per profile: tweaked name, original name, offer letter (PDF/image), verified annual salary, purchasing team, final price in credits. | CONFIRMED |
+| R-WIN-03 | Totals update automatically on SOLD; temporary bids never count; corrections/cancellations update credits and totals; each purchase counted once; unsold excluded. | CONFIRMED |
+| R-WIN-04 | Original name, letter, salary, team totals and salary rankings hidden from the audience until the final reveal; visible only in the organizer's private view. | CONFIRMED |
+| R-WIN-05 | "Start Final Reveal": per purchased profile tweaked name → original name → offer letter → salary → team; each salary added to the team's visible total. | CONFIRMED |
+| R-WIN-06 | Final leaderboard: Team · Profiles purchased · Combined annual offer amount · Rank; winner highlighted. | CONFIRMED |
+| R-WIN-07 | Ties: more credits remaining wins; still tied → joint winners. | CONFIRMED |
+| R-WIN-08 | Purchases and totals preserved on refresh. | CONFIRMED |
+| R-WIN-09 | Disqualified teams are not ranked and cannot win. | INFERRED (from R-END-02) |
+| R-WIN-10 | Reveal order = purchase order; reveal blocked while a purchased profile has no salary; private data frozen during the reveal; Back / Restart controls. | PROPOSED |
+
 ## 4. Open questions (UNRESOLVED)
 | ID | Question | Current behaviour |
 |---|---|---|
-| Q-01 | How is the league **winner** decided after the auction (e.g. later placements of the candidates)? Not mentioned. | No winner is declared; final squads only. |
+| ~~Q-01~~ | **Resolved 1 Nov 2026** — the winner is the team with the highest combined actual annual offer amount (section 3.8). | Implemented (R-WIN-01…10). |
 | Q-02 | Should team members bid from their own phones (reference shows magic links / access codes, 00:32, 03:27)? The client demonstrated organizer-entered bids only. | Not built; organizer enters bids. |
 | Q-03 | Real franchise names (IPL teams in the reference) carry trademark risk on a public screen. | Any names allowed; test and screenshot data use invented names. |
 | Q-04 | Countdown: 30 s configured, but "No timer" while bidding. Should time-up auto-sell? | Optional countdown (off by default) that only shows "time up". |
 | Q-05 | Are unsold candidates re-auctioned in further rounds? | Organizer may start another round. |
 | Q-06 | Unclear audio at 06:18–06:36 — only "…तो यह बोल्ड राइंग बोल्ड" was recovered (“…then this bold [unclear, possibly ‘writing’] bold”) — possibly a request about **bold text** in descriptions. | Not implemented; plain text exactly as typed. |
-| Q-07 | Consequence of team disqualification (prizes, ranking, return of candidates?). | Flag only (screen + report). |
-| Q-08 | Candidate privacy on a public screen (the reference data looked partly masked). | Organizer controls what is typed; display link is unguessable but public. |
+| Q-07 | Consequence of team disqualification beyond the ranking (prizes, return of candidates?). | Disqualified teams are flagged and not ranked (R-WIN-09); nothing else. |
+| Q-08 | Candidate privacy on a public screen (the reference data looked partly masked). | Partly answered by the client on 1 Nov 2026: profiles are shown under **tweaked names**; real names, letters and salaries appear only in the final reveal. Offer letters become viewable by anyone with the display link from their reveal step on. |

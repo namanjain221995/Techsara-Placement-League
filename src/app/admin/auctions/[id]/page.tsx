@@ -48,7 +48,14 @@ export default function OverviewPage() {
     {
       done: detail.counts.players >= 1,
       title: "Candidates",
-      body: `${detail.counts.players} candidate(s) — photo, role and point-wise description`,
+      body: `${detail.counts.players} candidate(s) — tweaked name, photo, role and point-wise clues`,
+      href: "players",
+    },
+    {
+      done:
+        detail.readiness.profiles > 0 && detail.readiness.verified === detail.readiness.profiles && detail.readiness.withLetter === detail.readiness.profiles,
+      title: "Offer letters & salaries (hidden)",
+      body: `${detail.readiness.withSalary}/${detail.readiness.profiles} annual salaries · ${detail.readiness.verified} verified · ${detail.readiness.withLetter} offer letters · ${detail.readiness.withOriginalName} original names — they decide the winner and stay hidden until the final reveal`,
       href: "players",
     },
     { done: locked, title: "Lock configuration", body: "Freezes money and squad rules so the live auction is fair", href: null },
@@ -98,6 +105,13 @@ export default function OverviewPage() {
                 </Button>
               </Link>
             )}
+            {a.status === "COMPLETED" && (
+              <Link href={`/admin/auctions/${id}/live`}>
+                <Button variant="primary" data-testid="open-reveal">
+                  <Radio className="size-4" /> {a.revealStatus === "COMPLETE" ? "Final leaderboard" : "Final Reveal"}
+                </Button>
+              </Link>
+            )}
             {a.status !== "DRAFT" && (
               <Button
                 variant="ghost"
@@ -108,7 +122,7 @@ export default function OverviewPage() {
                       title: "Reset this auction?",
                       tone: "danger",
                       confirmLabel: "Reset",
-                      body: "Deletes every bid and result and returns all candidates to the pool. Teams, candidates and settings stay. Use it after a rehearsal.",
+                      body: "Deletes every bid and result, returns all candidates to the pool and resets the final reveal. Teams, candidates (including salaries, original names and offer letters) and settings stay. Use it after a rehearsal.",
                     })
                   )
                     act("reset", "reset", "Auction reset to ready");
@@ -153,6 +167,15 @@ export default function OverviewPage() {
               </li>
             ))}
           </ol>
+          {a.revealStatus === "NOT_STARTED" && detail.readiness.warnings.length > 0 && (
+            <div className="mt-5 space-y-2" data-testid="readiness-warnings">
+              {detail.readiness.warnings.map((m) => (
+                <p key={m} className="flex gap-2 rounded-lg bg-warn-500/10 p-3 text-sm text-amber-300 ring-1 ring-warn-500/30">
+                  <AlertTriangle className="size-4 shrink-0" /> {m}
+                </p>
+              ))}
+            </div>
+          )}
           {(detail.issues.blocking.length > 0 || detail.issues.warnings.length > 0) && a.status === "DRAFT" && (
             <div className="mt-5 space-y-2">
               {detail.issues.blocking.map((m) => (
@@ -206,6 +229,15 @@ export default function OverviewPage() {
               keeps {money(a.basePrice)} (the base price) aside for every other candidate it still has to buy: purse {money(a.purse)} − {money(a.basePrice)} ×{" "}
               {Math.max(0, a.minSquad - 1)} = <b className="text-gold-300">{money(maxBid({ purse: a.purse, spent: 0, squadCount: 0 }, a))}</b> for an empty
               team. Teams below the minimum when the auction ends are disqualified.
+            </p>
+          </div>
+          <div className="panel p-6 text-sm text-ink-300">
+            <h2 className="mb-3 text-xs font-bold tracking-widest text-ink-300 uppercase">How the winner is decided</h2>
+            <p>
+              The team whose purchased profiles have the highest <b className="text-gold-300">combined actual annual salary</b> (from the original offer
+              letters, USD, excluding bonuses) wins. The number of profiles does not matter and auction credits are never deducted. Tie → more credits remaining
+              wins; still tied → joint winners. Salaries, original names and offer letters stay hidden from the audience until the{" "}
+              <b className="text-white">Final Reveal</b> in the live console.
             </p>
           </div>
         </div>

@@ -1,6 +1,22 @@
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { maxBid, type RuleConfig } from "../../src/shared/rules";
-import type { AuctionSettings, AuctionStats, BidView, LastResult, LiveEvent, LiveSnapshot, LotView, PlayerView, TeamView } from "../../src/shared/types";
+import { maxBid, rankStandings, REVEAL_LAST_STEP, revealVisibility, type RuleConfig } from "../../src/shared/rules";
+import type {
+  AuctionSettings,
+  AuctionStats,
+  BidView,
+  LastResult,
+  LiveEvent,
+  LiveSnapshot,
+  LotView,
+  OfferLetterRef,
+  PlayerView,
+  PrivatePlayerView,
+  PrivateView,
+  RevealCard,
+  RevealView,
+  TeamStanding,
+  TeamView,
+} from "../../src/shared/types";
 import type { DbOrTx } from "../db";
 import { auctions, bids, lots, players, teams, type AuctionRow, type LotRow, type PlayerRow, type TeamRow } from "../db/schema";
 import { notFound } from "../util/errors";
@@ -28,6 +44,7 @@ export function auctionView(a: AuctionRow): AuctionSettings {
     poolOrder: a.poolOrder,
     roles: a.roles,
     round: a.round,
+    revealStatus: a.revealStatus,
     version: a.version,
     createdAt: a.createdAt.toISOString(),
     updatedAt: a.updatedAt.toISOString(),
@@ -51,6 +68,101 @@ export function playerView(p: PlayerRow): PlayerView {
     soldToTeamId: p.soldToTeamId,
     soldRound: p.soldRound,
   };
+}
+
+const letterKind = (type: string | null): OfferLetterRef["kind"] => (type === "application/pdf" ? "pdf" : "image");
+
+/** Organizer-only profile view (hidden data included). Never put this in a public payload. */
+export function privatePlayerView(p: PlayerRow): PrivatePlayerView {
+  return {
+    ...playerView(p),
+    originalName: p.originalName,
+    annualSalary: p.annualSalary,
+    salaryVerified: p.salaryVerified,
+    letter: p.offerLetterPath
+      ? { url: `/api/players/${p.id}/offer-letter?v=${p.updatedAt.getTime()}`, kind: letterKind(p.offerLetterType), fileName: p.offerLetterName }
+      : null,
+  };
+}
+
+/** Public URL of an offer letter during the reveal (the endpoint re-checks the reveal step). */
+const publicLetterUrl = (a: AuctionRow, p: PlayerRow) =>
+  `/api/public/auctions/${encodeURIComponent(a.slug)}/reveal/${p.id}/offer-letter?v=${p.updatedAt.getTime()}`;
+
+/** A purchased profile as the audience may see it, given how far its reveal has progressed. */
+function revealCard(a: AuctionRow, p: PlayerRow, step: number): RevealCard {
+  return {
+    playerId: p.id,
+    number: p.number,
+    name: p.name,
+    role: p.role,
+    photoUrl: uploadUrl(p.photoPath) ?? p.photoUrl ?? null,
+    originalName: step >= 1 ? p.originalName : null,
+    letter: step >= 2 && p.offerLetterPath ? { url: publicLetterUrl(a, p), kind: letterKind(p.offerLetterType), fileName: null } : null,
+    annualSalary: step >= 3 ? p.annualSalary : null,
+    teamId: step >= REVEAL_LAST_STEP ? p.soldToTeamId : null,
+    soldPrice: step >= REVEAL_LAST_STEP ? p.soldPrice : null,
+  };
+}
+
+/**
+ * Salary standings from a set of (profile → team) pairs. Credits remaining come from the
+ * team views (public information). Ranked only when `ranked` (final or organizer view).
+ */
+function standings(tv: TeamView[], counted: PlayerRow[], ranked: boolean): TeamStanding[] {
+  const rows = tv.map((t) => {
+    const mine = counted.filter((p) => p.soldToTeamId === t.id);
+    return {
+      teamId: t.id,
+      profiles: mine.length,
+      total: mine.reduce((s, p) => s + (p.annualSalary ?? 0), 0),
+      creditsLeft: t.remaining,
+      disqualified: t.disqualified,
+    };
+  });
+  if (ranked) return rankStandings(rows);
+  return rows.map((r) => ({ ...r, rank: null, winner: false })).sort((x, y) => y.total - x.total || y.creditsLeft - x.creditsLeft);
+}
+
+/** The audience's view of the final reveal (sanitized: nothing beyond the current step). */
+export function revealView(a: AuctionRow, ps: PlayerRow[], tv: TeamView[]): RevealView {
+  const byId = new Map(ps.map((p) => [p.id, p]));
+  // The order is fixed at START_REVEAL and purchases are frozen while it runs; the SOLD filter is a safety net.
+  const order = (a.revealOrder ?? []).map((id) => byId.get(id)).filter((p): p is PlayerRow => !!p && p.status === "SOLD");
+  const base = { status: a.revealStatus, index: a.revealIndex, step: a.revealStep, count: (a.revealOrder ?? []).length };
+  if (a.revealStatus === "NOT_STARTED") return { ...base, index: 0, step: 0, current: null, revealed: [], standings: [] };
+  const { visibleStep } = revealVisibility(a.revealStatus, a.revealOrder, a.revealIndex, a.revealStep);
+  const revealed = order.filter((p) => visibleStep(p.id) >= REVEAL_LAST_STEP);
+  const currentRow = a.revealStatus === "IN_PROGRESS" ? order.find((p) => p.id === a.revealOrder[a.revealIndex]) : undefined;
+  return {
+    ...base,
+    current: currentRow ? revealCard(a, currentRow, visibleStep(currentRow.id)) : null,
+    revealed: revealed.map((p) => revealCard(a, p, REVEAL_LAST_STEP)),
+    standings: standings(tv, revealed, a.revealStatus === "COMPLETE"),
+  };
+}
+
+/** Organizer-only: hidden live totals (confirmed purchases only) and every profile's private data. */
+export function privateView(a: AuctionRow, ps: PlayerRow[], tv: TeamView[]): PrivateView {
+  const sold = ps.filter((p) => p.status === "SOLD" && p.soldToTeamId);
+  const scope = a.status === "COMPLETED" ? sold : ps.filter((p) => p.status !== "DISQUALIFIED");
+  const label = (p: PlayerRow) => `#${p.number} ${p.name}`;
+  const blocking: string[] = [];
+  const warnings: string[] = [];
+  if (a.status === "COMPLETED" && sold.length === 0) blocking.push("No profile was purchased, so there is nothing to reveal");
+  for (const p of scope) {
+    if (p.annualSalary == null) (a.status === "COMPLETED" ? blocking : warnings).push(`${label(p)}: annual salary missing`);
+    if (!p.originalName) warnings.push(`${label(p)}: original candidate name missing`);
+    if (!p.offerLetterPath) warnings.push(`${label(p)}: offer letter not uploaded`);
+    if (p.annualSalary != null && !p.salaryVerified) warnings.push(`${label(p)}: salary not yet verified against the letter`);
+  }
+  return { standings: standings(tv, sold, true), profiles: ps.map(privatePlayerView), revealCheck: { blocking, warnings } };
+}
+
+/** Strip everything organizer-only. Every snapshot that leaves for a public client goes through this. */
+export function publicSnapshot(s: LiveSnapshot): LiveSnapshot {
+  const { private: _hidden, ...rest } = s;
+  return rest;
 }
 
 /** Spent and squad size per team, derived from SOLD candidates (single source of truth). */
@@ -192,6 +304,8 @@ export async function buildSnapshot(db: DbOrTx, auctionId: string, event: LiveEv
     lastResult,
     stats: stats(ps, tv, lot?.player.id ?? null),
     announcement: a.announcement ? { text: a.announcement, at: (a.announcementAt ?? a.updatedAt).toISOString() } : null,
+    reveal: revealView(a, ps, tv),
+    private: privateView(a, ps, tv),
     event,
   };
 }

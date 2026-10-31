@@ -12,6 +12,7 @@ export const auctionStatusEnum = pgEnum("auction_status", ["DRAFT", "LOCKED", "L
 export const playerStatusEnum = pgEnum("player_status", ["POOL", "SOLD", "UNSOLD", "DISQUALIFIED"]);
 export const lotResultEnum = pgEnum("lot_result", ["OPEN", "SOLD", "UNSOLD", "SKIPPED", "DISQUALIFIED"]);
 export const poolOrderEnum = pgEnum("pool_order", ["RANDOM", "SEQUENTIAL"]);
+export const revealStatusEnum = pgEnum("reveal_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETE"]);
 
 export const admins = pgTable("admins", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -58,6 +59,13 @@ export const auctions = pgTable(
     lastLotId: uuid("last_lot_id"),
     announcement: text("announcement"),
     announcementAt: ts("announcement_at"),
+    // Final reveal (winner = combined actual annual salaries). Order is fixed when the reveal starts.
+    revealStatus: revealStatusEnum("reveal_status").notNull().default("NOT_STARTED"),
+    revealOrder: jsonb("reveal_order").$type<string[]>().notNull().default([]),
+    revealIndex: integer("reveal_index").notNull().default(0),
+    revealStep: integer("reveal_step").notNull().default(0),
+    revealStartedAt: ts("reveal_started_at"),
+    revealCompletedAt: ts("reveal_completed_at"),
     version: integer("version").notNull().default(1),
     createdBy: uuid("created_by").references(() => admins.id, { onDelete: "set null" }),
     createdAt: ts("created_at").notNull().defaultNow(),
@@ -71,6 +79,7 @@ export const auctions = pgTable(
     check("auctions_money_chk", sql`${t.purse} > 0 AND ${t.basePrice} > 0 AND ${t.bidIncrement} > 0`),
     check("auctions_timer_chk", sql`${t.timerSeconds} BETWEEN 5 AND 600`),
     check("auctions_round_chk", sql`${t.round} >= 1`),
+    check("auctions_reveal_chk", sql`${t.revealIndex} >= 0 AND ${t.revealStep} BETWEEN 0 AND 4`),
   ],
 );
 
@@ -118,6 +127,13 @@ export const players = pgTable(
     soldToTeamId: uuid("sold_to_team_id").references(() => teams.id, { onDelete: "restrict" }),
     soldRound: integer("sold_round"),
     soldAt: ts("sold_at"),
+    // Hidden until the final reveal — never part of the public snapshot.
+    originalName: text("original_name"),
+    annualSalary: integer("annual_salary"), // whole USD, base annual salary excluding bonuses
+    salaryVerified: boolean("salary_verified").notNull().default(false),
+    offerLetterPath: text("offer_letter_path"), // file under UPLOAD_DIR/private/
+    offerLetterType: text("offer_letter_type"), // application/pdf | image/png | image/jpeg | image/webp
+    offerLetterName: text("offer_letter_name"), // original file name (organizer view only)
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
@@ -126,6 +142,7 @@ export const players = pgTable(
     index("players_auction_status_idx").on(t.auctionId, t.status),
     check("players_sold_consistency_chk", sql`(${t.status} = 'SOLD') = (${t.soldToTeamId} IS NOT NULL AND ${t.soldPrice} IS NOT NULL)`),
     check("players_money_chk", sql`(${t.basePrice} IS NULL OR ${t.basePrice} > 0) AND (${t.soldPrice} IS NULL OR ${t.soldPrice} > 0)`),
+    check("players_salary_chk", sql`${t.annualSalary} IS NULL OR ${t.annualSalary} > 0`),
   ],
 );
 

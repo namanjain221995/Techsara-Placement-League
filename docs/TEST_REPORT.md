@@ -1,6 +1,6 @@
 # Test Report
 
-Environment: Ubuntu 24.04.5 (cloud build container), 2 vCPU, 7.8 GB RAM, Node.js 22.23.4, embedded PostgreSQL 18.6, Chromium (Playwright 1.63.0). Date: 31 Oct 2026. Every result below was produced by actually running the command on the final code; nothing is extrapolated.
+Environment: Ubuntu 24.04.5 (cloud build container), 2 vCPU, 7.8 GB RAM, Node.js 22.23.4, embedded PostgreSQL 18.6, Chromium (Playwright 1.63.0). Dates: 31 Oct 2026 (first delivery) and **1 Nov 2026** (winner by combined actual offers + Final Reveal — see the section at the end). Every result below was produced by actually running the command on the code of that date; nothing is extrapolated.
 
 ## Summary
 | Check | Command | Result |
@@ -9,10 +9,10 @@ Environment: Ubuntu 24.04.5 (cloud build container), 2 vCPU, 7.8 GB RAM, Node.js
 | Lint | `npx eslint .` | ✅ 0 errors, 0 warnings (one justified inline disable: hard redirect on expired session in `src/lib/api.ts`) |
 | Formatting | `npx prettier --check .` | ✅ all code files formatted (docs excluded by `.prettierignore`) |
 | Production build | `rm -rf .next && npx next build` (Next.js 16.4.3, Turbopack) | ✅ clean build, 11 routes |
-| Unit tests | `npx vitest run` (project `unit`) | ✅ 25 / 25 |
-| Integration tests (real PostgreSQL, HTTP + WebSocket) | `npx vitest run` (project `integration`) | ✅ 21 / 21 |
-| End-to-end (production build, Chromium) | `npx playwright test` | ✅ 5 / 5 on the final code (36.5 s); the same suite also passed on 5 earlier runs during development |
-| Real-time latency (command → public display, localhost) | logged by `realtime.test.ts` | **12.5 ms, 9.9 ms, 16.7 ms** on the final run (earlier runs: 12.8 / 8.6 / 15.9, 23.9 / 9.1 / 9.9, 14.5 / 10.5 / 10.7 and 12.6 / 9.5 / 10.6 ms); assertion < 500 ms |
+| Unit tests | `npx vitest run` (project `unit`) | ✅ **37 / 37** (1 Nov 2026; 25 / 25 on 31 Oct) |
+| Integration tests (real PostgreSQL, HTTP + WebSocket) | `npx vitest run` (project `integration`) | ✅ **24 / 24** (1 Nov 2026; 21 / 21 on 31 Oct) |
+| End-to-end (production build, Chromium) | `npx playwright test` | ✅ **6 / 6** on 1 Nov 2026 (48.6 s, after a clean rebuild); 5 / 5 on 31 Oct (36.5 s) |
+| Real-time latency (command → public display, localhost) | logged by `realtime.test.ts` | **14.3 ms, 11.8 ms, 9.4 ms** on 1 Nov 2026 (31 Oct: 12.5 / 9.9 / 16.7; earlier runs 12.8 / 8.6 / 15.9, 23.9 / 9.1 / 9.9, 14.5 / 10.5 / 10.7, 12.6 / 9.5 / 10.6 ms); assertion < 500 ms |
 | Docker image steps (outside Docker) | clean `npm ci` → `next build` → `npm ci --omit=dev` → `node --import tsx server/index.ts` in the image's runtime layout, against a fresh external PostgreSQL | ✅ migrations on an empty database, generated organizer password printed, health check 200, demo seed (`--force`), full UI run + auction to the end, 0 page errors, clean SIGTERM shutdown. The image could not be built on the build machine (container registries blocked); `docker compose config` validates the compose file. |
 | Docker Compose on the client laptop (Windows 11, Docker Desktop) | `start-with-docker.cmd` → `docker compose up -d --build`; `add-demo-auction.cmd` | ✅ image built (≈ 2 min), `db` and `app` containers running, port 3000 published, the app answered its health check and served the organizer sign-in page at `http://localhost:3000`, demo auction created. |
 | GitHub Actions CI (`.github/workflows/deploy.yml`, ubuntu-24.04 runner) | runs #1 and #2 on `main` | ✅ typecheck, lint, format check, unit + integration tests, production build and end-to-end tests passed on GitHub's runners; the deploy job was skipped until the repository secrets were added |
@@ -78,3 +78,33 @@ Driven by a Playwright script through the real UI, then finished through the org
 - Real projector/LED hardware and venue Wi-Fi; Safari/Firefox (Chromium only).
 - Load beyond a few concurrent screens; multi-hour soak; several auctions live at the same time.
 - Excel import with the client's own spreadsheets (only the template and synthetic CSV files were tested).
+
+## 1 Nov 2026 — winner by combined actual offers + Final Reveal
+All commands re-run on the final code: `tsc` 0 errors · `eslint .` 0 problems · `prettier --check .` clean · `rm -rf .next && next build` clean · **unit 37 / 37 · integration 24 / 24 · end-to-end 6 / 6**.
+
+### Unit — `tests/unit/reveal.test.ts` (12)
+The client's example (3 profiles $431,000 beat 4 profiles $400,000); credits never deducted and profile count ignored; salary tie → more credits wins; full tie → joint winners with competition ranks 1, 1, 3; a disqualified team with the highest total is unranked and cannot win; no winner while every total is $0; reveal visibility before / during (earlier profiles fully, current up to its step, later and unsold profiles not at all) / after; salary parsing (`120000`, `$120,000`, `95,500.00`, `USD 95000`) and rejection of cents, negatives, zero, text.
+
+### Integration — `tests/integration/reveal.test.ts` (3, real PostgreSQL + HTTP + Socket.IO)
+1. **Whole event** (5 teams, 12 profiles, minimum squad 1): private data entered after locking; changed salary loses its verification; cents rejected; PDF and PNG letters uploaded, HTML refused (`UNSUPPORTED_LETTER`), organizer download `application/pdf` + `no-store`, anonymous 401.
+   - Bid alone → hidden total **$0**; SOLD → **$150,000**; credits $24M; second sale after a rival bid → $291,000; a sold profile without salary counts 0 until entered; MUM 4 profiles → $400,000; a bid-on then **unsold** profile ($987,654) never counts; BLR $250,000.
+   - Corrections: return to pool → BLR $0 and credits back to $25M; assign to GUJ for $2M → $250,000 and $23M.
+   - End auction (BLR disqualified, 0 < 1); cancelling a purchase after the end → profile **UNSOLD**, MUM $300,000; re-assigned → $400,000.
+   - **Start Final Reveal blocked** (`REVEAL_NOT_READY`, names profile #3) until its salary is entered → CHS **$431,000 rank 1 winner**, MUM $400,000 rank 2.
+   - **Leak scan:** the join snapshot and **every** public socket message received before the reveal (> 10), and the public REST snapshot, contain no original name, no `annualSalary` number, no `originalName` value, no letter URL, no `private` key, no unsold salary; the public letter endpoint answers 404.
+   - Reveal steps checked on the public API: step 0 name only; step 1 original name (next profile's name absent); step 2 letter URL → 200 `application/pdf`, file name not exposed, next profile's letter still 404; step 3 salary, team hidden, team total still $0; step 4 team + credits paid, visible total $150,000, unranked. Back/forward across profiles. Edits during the reveal → `REVEAL_STARTED` (salary, letter, correction); unchanged values accepted. After every completed profile the visible totals equal the revealed salaries. Final: **CHS 3 / $431,000 / rank 1 / winner · MUM 4 / $400,000 / 2 · GUJ 1 / $250,000 / 3 · BLR, DEL unranked**; unsold profile never revealed (letter 404).
+   - **Server + database restart** → the public leaderboard is identical. Results API and Excel export (*Winner (Salary Totals)* row 1 = Chennai Strikers, 3, 431000, WINNER; Squads sheet with original names). Audit log has `privateFieldsChanged` and no salary values. Restart reveal → everything hidden again, letters 404, edits allowed. Rehearsal reset → LOCKED, reveal NOT_STARTED, private data kept, totals $0.
+2. **Import and clone:** CSV with *Original Name*, *Annual Salary (USD)* (`"$120,000"`), *Salary Verified* (`Yes`) imported; `12.5k` rejected with a row message; clone copies names, salaries, verification and the letter file (downloadable); readiness counts; template headers present.
+3. **Session end:** an organizer socket whose session is logged out is refused on `sync` (`UNAUTHORIZED`) and leaves the private room.
+
+A deliberate mutation check was also run: making `publicSnapshot()` return the full organizer snapshot makes test 1 fail at the first leak scan (then reverted).
+
+### End-to-end — `tests/e2e/final-reveal.spec.ts` (1, production build, Chromium, 1920×1080 display)
+Seven profiles with salaries and letters (one watermarked sample PNG, six PDFs). Hidden-totals panel masked until **Show**; the lot strip shows the original name and $150,000/yr to the organizer; a bid leaves CCR at **$0**, SOLD → **$150,000**; after six more sales CCR **$431,000**, HHK **$400,000**; the audience page text contains no original name or salary. End auction → **"Final reveal coming up"**; Start Final Reveal → *Profile 1 of 7*; keyboard → steps: original name, the letter image actually loads (natural width > 100 px), salary **$150,000**, team + running total **$150,000**; the second profile's PDF letter is embedded and served as `application/pdf`; remaining steps → leaderboard: **Code Crusaders winner, rank 1, 3 profiles, $431,000**; Hire Hawks rank 2, 4 profiles, $400,000; Offer Owls *Not ranked* (below the minimum squad). Projector reload shows the same leaderboard. The organizer-flow E2E was updated for the renamed *Tweaked name* field and still passes.
+
+### Screenshots (fictional data, watermarked sample letters)
+`docs/screenshots/`: `admin-candidates-hidden-data.png`, `admin-candidate-private-fields.png`, `console-hidden-salary-totals.png`, `display-bidding-no-salaries.png`, `console-final-reveal-ready.png`, `display-final-reveal-coming-up.png`, `display-reveal-step0-display-name.png`, `display-reveal-step2-offer-letter.png`, `display-reveal-step4-team-total.png`, `console-final-reveal-running.png`, `display-final-leaderboard.png`, `admin-results-salary-winner.png`.
+
+### Not tested (1 Nov additions)
+- PDF letters **rendering** inside the projector browser: headless Chromium has no PDF viewer, so the tests check the embedded frame and the served file (`application/pdf`), not the drawn pages. Image letters were verified visually.
+- The client's real offer letters and salaries (not available; nothing was invented).

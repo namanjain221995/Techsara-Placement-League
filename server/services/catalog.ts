@@ -5,10 +5,10 @@ import { setupIssues } from "../../src/shared/rules";
 import type { Db, Tx } from "../db";
 import { auctions, bids, lots, players, processedCommands, teams, type AuctionRow } from "../db/schema";
 import type { AuctionEngine } from "../engine/engine";
-import { auctionView, playerView, ruleConfig, teamViews } from "../engine/snapshot";
+import { auctionView, privatePlayerView, ruleConfig, teamViews } from "../engine/snapshot";
 import { conflict, notFound } from "../util/errors";
 import { audit, type AuditActor } from "./audit";
-import { copyImage, deleteImage } from "./uploads";
+import { copyImage, copyOfferLetter, deleteImage, deleteOfferLetter } from "./uploads";
 
 // ----------------------------------------------------------------------------- helpers
 export function makeSlug(name: string) {
@@ -28,6 +28,21 @@ function assertDraft(a: AuctionRow, what: string) {
     "CONFIG_LOCKED",
     `${what} is only possible during setup. ${a.status === "LOCKED" ? "Unlock the configuration first." : "The auction has already started."}`,
   );
+}
+
+/** Salary, original name and offer letter are frozen once the final reveal has started. */
+function assertBeforeReveal(a: AuctionRow, what: string) {
+  if (a.revealStatus === "NOT_STARTED") return;
+  throw conflict("REVEAL_STARTED", `${what} is locked while the final reveal is running. Restart the reveal first (live console).`);
+}
+
+/** Private (hidden-until-reveal) fields of a candidate input; undefined means "leave unchanged". */
+function privateFields(input: PlayerInput) {
+  return {
+    ...(input.originalName !== undefined ? { originalName: input.originalName ?? null } : {}),
+    ...(input.annualSalary !== undefined ? { annualSalary: input.annualSalary ?? null } : {}),
+    ...(input.salaryVerified !== undefined ? { salaryVerified: input.salaryVerified } : {}),
+  };
 }
 
 async function auctionOr404(db: Db | Tx, id: string) {
@@ -81,8 +96,38 @@ export async function auctionDetail(db: Db, id: string) {
   return {
     auction: auctionView(a),
     counts: c,
+    readiness: await salaryReadiness(db, id),
     issues: setupIssues({ teamCount: c.teams, playerCount: c.players, purse: a.purse, cfg: ruleConfig(a) }),
   };
+}
+
+/** How complete the hidden winner data is (salaries, verification, letters, original names). */
+export async function salaryReadiness(db: Db | Tx, auctionId: string) {
+  const ps = await db
+    .select({
+      status: players.status,
+      originalName: players.originalName,
+      annualSalary: players.annualSalary,
+      verified: players.salaryVerified,
+      letter: players.offerLetterPath,
+    })
+    .from(players)
+    .where(eq(players.auctionId, auctionId));
+  const profiles = ps.filter((p) => p.status !== "DISQUALIFIED");
+  const r = {
+    profiles: profiles.length,
+    withSalary: profiles.filter((p) => p.annualSalary != null).length,
+    verified: profiles.filter((p) => p.annualSalary != null && p.verified).length,
+    withLetter: profiles.filter((p) => !!p.letter).length,
+    withOriginalName: profiles.filter((p) => !!p.originalName).length,
+  };
+  const warnings: string[] = [];
+  const missing = (n: number, what: string) => n > 0 && warnings.push(`${n} candidate(s) ${what}.`);
+  missing(r.profiles - r.withSalary, "have no annual salary yet — the final reveal cannot start until every purchased profile has one");
+  missing(r.withSalary - r.verified, "have a salary not yet marked as verified against the offer letter");
+  missing(r.profiles - r.withLetter, "have no offer letter uploaded");
+  missing(r.profiles - r.withOriginalName, "have no original candidate name");
+  return { ...r, warnings };
 }
 
 const LOCKED_FIELDS = ["currencySymbol", "purse", "basePrice", "bidIncrement", "minSquad", "maxSquad"] as const;
@@ -165,6 +210,12 @@ export async function cloneAuction(db: Db, actor: AuditActor, id: string, name: 
         photoPath: copyImage(p.photoPath),
         photoUrl: p.photoUrl,
         basePrice: p.basePrice,
+        originalName: p.originalName,
+        annualSalary: p.annualSalary,
+        salaryVerified: p.salaryVerified,
+        ...(p.offerLetterPath
+          ? { offerLetterPath: copyOfferLetter(p.offerLetterPath), offerLetterType: p.offerLetterType, offerLetterName: p.offerLetterName }
+          : {}),
       });
     await audit(tx, actor, "auction.clone", copy.id, { from: id, fromName: src.name, teams: ts.length, players: ps.length });
     return auctionView(copy);
@@ -176,12 +227,13 @@ export async function deleteAuction(engine: AuctionEngine, db: Db, actor: AuditA
     const a = await auctionOr404(db, id);
     if (a.status === "LIVE" || a.status === "PAUSED") throw conflict("AUCTION_LIVE", "End the auction before deleting it.");
     const ts = await db.select({ p: teams.logoPath }).from(teams).where(eq(teams.auctionId, id));
-    const ps = await db.select({ p: players.photoPath }).from(players).where(eq(players.auctionId, id));
+    const ps = await db.select({ p: players.photoPath, letter: players.offerLetterPath }).from(players).where(eq(players.auctionId, id));
     await db.transaction(async (tx) => {
       await tx.delete(auctions).where(eq(auctions.id, id));
       await audit(tx, actor, "auction.delete", null, { id, name: a.name, status: a.status });
     });
     [...ts, ...ps].forEach((r) => deleteImage(r.p));
+    ps.forEach((r) => deleteOfferLetter(r.letter));
   });
 }
 
@@ -195,7 +247,7 @@ export async function lockAuction(engine: AuctionEngine, actor: AuditActor, id: 
     for (const t of ts) if (t.purse < a.basePrice * Math.max(a.minSquad, 1)) issues.blocking.push(`${t.name}'s purse cannot cover the minimum squad.`);
     if (issues.blocking.length) throw conflict("SETUP_INCOMPLETE", issues.blocking.join(" "), issues);
     await tx.update(auctions).set({ status: "LOCKED", lockedAt: new Date() }).where(eq(auctions.id, id));
-    return issues;
+    return { ...issues, warnings: [...issues.warnings, ...(await salaryReadiness(tx, id)).warnings] };
   });
 }
 
@@ -221,7 +273,21 @@ export async function resetAuction(engine: AuctionEngine, actor: AuditActor, id:
     await tx.update(teams).set({ disqualified: false }).where(eq(teams.auctionId, id));
     await tx
       .update(auctions)
-      .set({ status: "LOCKED", round: 1, lotSequence: 0, announcement: null, announcementAt: null, liveAt: null, completedAt: null })
+      .set({
+        status: "LOCKED",
+        round: 1,
+        lotSequence: 0,
+        announcement: null,
+        announcementAt: null,
+        liveAt: null,
+        completedAt: null,
+        revealStatus: "NOT_STARTED",
+        revealOrder: [],
+        revealIndex: 0,
+        revealStep: 0,
+        revealStartedAt: null,
+        revealCompletedAt: null,
+      })
       .where(eq(auctions.id, id));
   });
 }
@@ -314,7 +380,7 @@ export async function reorderTeams(engine: AuctionEngine, actor: AuditActor, auc
 export async function listPlayers(db: Db, auctionId: string) {
   await auctionOr404(db, auctionId);
   const ps = await db.select().from(players).where(eq(players.auctionId, auctionId)).orderBy(asc(players.number));
-  return ps.map(playerView);
+  return ps.map(privatePlayerView);
 }
 
 export async function playerOr404(db: Db, playerId: string) {
@@ -344,9 +410,10 @@ export async function createPlayer(engine: AuctionEngine, actor: AuditActor, auc
         description: normaliseDescription(input.description),
         basePrice: input.basePrice ?? null,
         photoUrl: input.photoUrl ?? null,
+        ...privateFields(input),
       })
       .returning();
-    return playerView(p);
+    return privatePlayerView(p);
   });
 }
 
@@ -362,10 +429,20 @@ export function normaliseDescription(s: string | undefined) {
 
 export async function updatePlayer(engine: AuctionEngine, actor: AuditActor, playerId: string, input: PlayerInput, db: Db) {
   const p = await playerOr404(db, playerId);
-  return engine.mutate(p.auctionId, actor, "player.update", { playerId, name: input.name }, async (tx, a) => {
+  const hidden = privateFields(input);
+  // Audit which private fields changed, never their values (the audit log is shown on screen).
+  const changedPrivate = Object.entries(hidden)
+    .filter(([k, v]) => (p as Record<string, unknown>)[k] !== v)
+    .map(([k]) => k);
+  const details = { playerId, name: input.name, ...(changedPrivate.length ? { privateFieldsChanged: changedPrivate } : {}) };
+  return engine.mutate(p.auctionId, actor, "player.update", details, async (tx, a) => {
     const structural =
       (input.basePrice !== undefined && (input.basePrice ?? null) !== p.basePrice) || (input.number !== undefined && input.number !== p.number);
     if (structural) assertDraft(a, "Changing a candidate's number or base price");
+    if (changedPrivate.length) assertBeforeReveal(a, "Changing the original name or salary");
+    // A changed salary must be re-verified against the letter unless the same request confirms it.
+    const salaryChanged = changedPrivate.includes("annualSalary");
+    const verified = input.salaryVerified !== undefined ? input.salaryVerified : salaryChanged ? false : undefined;
     const [row] = await tx
       .update(players)
       .set({
@@ -375,11 +452,13 @@ export async function updatePlayer(engine: AuctionEngine, actor: AuditActor, pla
         ...(input.photoUrl !== undefined ? { photoUrl: input.photoUrl } : {}),
         ...(input.basePrice !== undefined ? { basePrice: input.basePrice ?? null } : {}),
         ...(input.number !== undefined ? { number: input.number } : {}),
+        ...hidden,
+        ...(verified !== undefined ? { salaryVerified: verified } : {}),
         updatedAt: new Date(),
       })
       .where(eq(players.id, playerId))
       .returning();
-    return playerView(row);
+    return privatePlayerView(row);
   });
 }
 
@@ -390,6 +469,7 @@ export async function deletePlayer(engine: AuctionEngine, actor: AuditActor, pla
     await tx.delete(players).where(eq(players.id, playerId));
   });
   deleteImage(p.photoPath);
+  deleteOfferLetter(p.offerLetterPath);
 }
 
 /** R-PLAYER-02 (client 01:07): candidate photo upload. Allowed at any time (cosmetic). */
@@ -402,6 +482,30 @@ export async function setPlayerPhoto(engine: AuctionEngine, actor: AuditActor, p
       .where(eq(players.id, playerId));
   });
   if (p.photoPath && p.photoPath !== photoPath) deleteImage(p.photoPath);
+}
+
+/** The actual offer letter (PDF or image). Organizer-only until its step in the final reveal. */
+export async function setOfferLetter(
+  engine: AuctionEngine,
+  actor: AuditActor,
+  playerId: string,
+  letter: { path: string; type: string; name: string } | null,
+  db: Db,
+) {
+  const p = await playerOr404(db, playerId);
+  try {
+    await engine.mutate(p.auctionId, actor, letter ? "player.offer_letter" : "player.offer_letter.remove", { playerId }, async (tx, a) => {
+      assertBeforeReveal(a, "Changing the offer letter");
+      await tx
+        .update(players)
+        .set({ offerLetterPath: letter?.path ?? null, offerLetterType: letter?.type ?? null, offerLetterName: letter?.name ?? null, updatedAt: new Date() })
+        .where(eq(players.id, playerId));
+    });
+  } catch (e) {
+    if (letter) deleteOfferLetter(letter.path); // nothing references the new file
+    throw e;
+  }
+  if (p.offerLetterPath && p.offerLetterPath !== letter?.path) deleteOfferLetter(p.offerLetterPath);
 }
 
 export async function insertPlayers(engine: AuctionEngine, actor: AuditActor, auctionId: string, rows: PlayerInput[]) {
@@ -417,6 +521,7 @@ export async function insertPlayers(engine: AuctionEngine, actor: AuditActor, au
         description: normaliseDescription(r.description),
         basePrice: r.basePrice ?? null,
         photoUrl: r.photoUrl ?? null,
+        ...privateFields(r),
       });
     return rows.length;
   });

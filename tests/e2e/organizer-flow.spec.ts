@@ -56,7 +56,7 @@ test("organizer runs a complete auction while the projector display follows in r
   for (const name of ["Asha Verma", "Bilal Khan", "Chitra Rao", "Dev Malhotra"]) {
     await page.getByTestId("add-player").click();
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Name").fill(name);
+    await dialog.getByTestId("name-input").fill(name);
     await dialog.getByTestId("description-input").fill(description);
     await dialog.getByTestId("save-player").click();
     await expect(dialog).toBeHidden();

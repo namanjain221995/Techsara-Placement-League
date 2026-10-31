@@ -9,9 +9,10 @@ import { AutoFitDescription } from "@/components/description";
 import { PlayerPhoto, TeamLogo } from "@/components/media";
 import { cn } from "@/lib/cn";
 import { useCountdown, type ConnState } from "@/lib/live";
-import { formatMoney, multipleOfBase } from "@/shared/money";
+import { formatMoney, formatUsd, multipleOfBase } from "@/shared/money";
 import { orderTeamsForDisplay } from "@/shared/rules";
 import type { LiveSnapshot, TeamView } from "@/shared/types";
+import { FinalLeaderboard, RevealComingUp, RevealStage } from "./reveal";
 
 const vw = (min: number, v: number, max: number) => `clamp(${min}rem, ${v}vw, ${max}rem)`;
 
@@ -31,7 +32,13 @@ export function DisplayStage({ snapshot: s, conn, clockOffset }: { snapshot: Liv
         {a.status === "DRAFT" || a.status === "LOCKED" ? (
           <PreLive s={s} money={money} />
         ) : a.status === "COMPLETED" ? (
-          <FinalBoard s={s} money={money} />
+          s.reveal.status === "IN_PROGRESS" ? (
+            <RevealStage s={s} money={money} teamById={teamById} />
+          ) : s.reveal.status === "COMPLETE" ? (
+            <FinalLeaderboard s={s} money={money} teamById={teamById} />
+          ) : (
+            <FinalBoard s={s} money={money} />
+          )
         ) : (
           <>
             <AnimatePresence mode="wait">
@@ -79,7 +86,11 @@ function Header({ s, sound, setSound }: { s: LiveSnapshot; sound: boolean; setSo
       : a.status === "PAUSED"
         ? { text: "Paused", cls: "bg-warn-500/15 text-amber-300 ring-warn-500/50", dot: false }
         : a.status === "COMPLETED"
-          ? { text: "Final", cls: "bg-win-500/15 text-win-400 ring-win-500/50", dot: false }
+          ? s.reveal.status === "IN_PROGRESS"
+            ? { text: "Final reveal", cls: "bg-gold-500/15 text-gold-300 ring-gold-500/50", dot: true }
+            : s.reveal.status === "COMPLETE"
+              ? { text: "Final results", cls: "bg-win-500/15 text-win-400 ring-win-500/50", dot: false }
+              : { text: "Bidding closed", cls: "bg-win-500/15 text-win-400 ring-win-500/50", dot: false }
           : { text: "Starting soon", cls: "bg-volt-500/15 text-volt-400 ring-volt-500/50", dot: false };
   const full = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => undefined);
   return (
@@ -462,6 +473,21 @@ function Ticker({ s, money, teamById }: { s: LiveSnapshot; money: Money; teamByI
         tag: "Top spender",
         text: `${teamById.get(s.stats.topSpender.teamId)?.name ?? ""} — ${money(s.stats.topSpender.spent)} on ${s.stats.topSpender.squadCount} candidate(s)`,
       });
+    if (s.auction.status === "COMPLETED") {
+      const r = s.reveal;
+      if (r.status === "NOT_STARTED")
+        out.unshift({ tag: "Up next", text: "Final reveal — real candidates, actual offer letters and annual salaries", hot: true });
+      else if (r.status === "IN_PROGRESS") out.unshift({ tag: "Final reveal", text: `Profile ${r.index + 1} of ${r.count}`, hot: true });
+      else {
+        const w = r.standings.filter((x) => x.winner);
+        if (w.length)
+          out.unshift({
+            tag: w.length > 1 ? "Joint winners" : "Winner",
+            text: `${w.map((x) => teamById.get(x.teamId)?.name ?? "").join(" & ")} — ${formatUsd(w[0].total)} combined annual offers`,
+            hot: true,
+          });
+      }
+    }
     out.push({ tag: "Overview", text: `Sold ${s.stats.sold} · Unsold ${s.stats.unsold} · In pool ${s.stats.pool} · Total ${s.stats.total}` });
     return out;
   }, [s, money, teamById]);
@@ -675,6 +701,7 @@ function FinalBoard({ s, money }: { s: LiveSnapshot; money: Money }) {
   const a = s.auction;
   return (
     <section className="col-span-full flex min-h-0 flex-1 flex-col gap-[1vw]" data-testid="display-final">
+      <RevealComingUp />
       <div className="text-center font-display font-semibold tracking-[0.2em] text-ink-200 uppercase" style={{ fontSize: vw(1, 1.8, 3) }}>
         Final squads
       </div>

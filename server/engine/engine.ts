@@ -1,14 +1,14 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { formatMoney } from "../../src/shared/money";
-import { checkBid, maxBid, suggestedNextBid } from "../../src/shared/rules";
+import { checkBid, maxBid, REVEAL_LAST_STEP, suggestedNextBid } from "../../src/shared/rules";
 import type { LiveCommand, PlayerOverride } from "../../src/shared/schemas";
 import type { AuctionStatus, LiveEvent, LiveEventType, LiveSnapshot } from "../../src/shared/types";
 import type { Db, Tx } from "../db";
 import { auctions, bids, lots, players, processedCommands, teams, type AuctionRow } from "../db/schema";
 import { audit, SYSTEM_ACTOR, type AuditActor } from "../services/audit";
 import { AppError, conflict, notFound } from "../util/errors";
-import { buildSnapshot, ruleConfig } from "./snapshot";
+import { buildSnapshot, privateView, ruleConfig, teamViews } from "./snapshot";
 
 export interface Broadcaster {
   publish(snapshot: LiveSnapshot): void;
@@ -379,6 +379,70 @@ export class AuctionEngine {
         return ev("ANNOUNCEMENT", { text: cmd.text });
       }
 
+      // ------------------------------------------------------------- final reveal
+      // Profiles are revealed in purchase order, one step at a time:
+      // display name → original name → offer letter → annual salary → purchasing team.
+      case "START_REVEAL": {
+        requireStatus(a, ["COMPLETED"], "start the final reveal");
+        if (a.revealStatus !== "NOT_STARTED") throw conflict("REVEAL_ALREADY_STARTED", "The final reveal has already started.");
+        const [ts, ps] = await Promise.all([
+          tx.select().from(teams).where(eq(teams.auctionId, a.id)),
+          tx.select().from(players).where(eq(players.auctionId, a.id)),
+        ]);
+        const check = privateView(a, ps, teamViews(a, ts, ps)).revealCheck;
+        if (check.blocking.length) throw conflict("REVEAL_NOT_READY", `Cannot start the final reveal: ${check.blocking.join("; ")}.`, check);
+        const order = ps
+          .filter((p) => p.status === "SOLD")
+          .sort((x, y) => (x.soldAt?.getTime() ?? 0) - (y.soldAt?.getTime() ?? 0) || x.number - y.number)
+          .map((p) => p.id);
+        await setAuction({ revealStatus: "IN_PROGRESS", revealOrder: order, revealIndex: 0, revealStep: 0, revealStartedAt: now, revealCompletedAt: null });
+        return ev("REVEAL_STARTED", { playerId: order[0] });
+      }
+
+      case "REVEAL_NEXT": {
+        requireStatus(a, ["COMPLETED"], "continue the final reveal");
+        if (a.revealStatus === "NOT_STARTED") throw conflict("REVEAL_NOT_STARTED", "Start the final reveal first.");
+        if (a.revealStatus === "COMPLETE") throw conflict("REVEAL_COMPLETE", "The final leaderboard is already shown.");
+        const last = a.revealOrder.length - 1;
+        if (a.revealStep < REVEAL_LAST_STEP) {
+          await setAuction({ revealStep: a.revealStep + 1 });
+          return ev("REVEAL_STEP", { playerId: a.revealOrder[a.revealIndex] });
+        }
+        if (a.revealIndex < last) {
+          await setAuction({ revealIndex: a.revealIndex + 1, revealStep: 0 });
+          return ev("REVEAL_STEP", { playerId: a.revealOrder[a.revealIndex + 1] });
+        }
+        await setAuction({ revealStatus: "COMPLETE", revealCompletedAt: now });
+        return ev("REVEAL_COMPLETE");
+      }
+
+      case "REVEAL_BACK": {
+        requireStatus(a, ["COMPLETED"], "go back in the final reveal");
+        if (a.revealStatus === "NOT_STARTED") throw conflict("REVEAL_NOT_STARTED", "Start the final reveal first.");
+        if (a.revealStatus === "COMPLETE") {
+          await setAuction({
+            revealStatus: "IN_PROGRESS",
+            revealIndex: Math.max(0, a.revealOrder.length - 1),
+            revealStep: REVEAL_LAST_STEP,
+            revealCompletedAt: null,
+          });
+        } else if (a.revealStep > 0) {
+          await setAuction({ revealStep: a.revealStep - 1 });
+        } else if (a.revealIndex > 0) {
+          await setAuction({ revealIndex: a.revealIndex - 1, revealStep: REVEAL_LAST_STEP });
+        } else {
+          throw conflict("REVEAL_AT_START", "Already at the first step of the reveal.");
+        }
+        return ev("REVEAL_STEP");
+      }
+
+      case "RESTART_REVEAL": {
+        requireStatus(a, ["COMPLETED"], "restart the final reveal");
+        if (a.revealStatus === "NOT_STARTED") throw conflict("REVEAL_NOT_STARTED", "The final reveal has not started.");
+        await setAuction({ revealStatus: "NOT_STARTED", revealOrder: [], revealIndex: 0, revealStep: 0, revealStartedAt: null, revealCompletedAt: null });
+        return ev("REVEAL_RESET");
+      }
+
       default: {
         const unknown: never = cmd;
         throw conflict("UNKNOWN_COMMAND", `Unknown command ${(unknown as { type: string }).type}.`);
@@ -416,8 +480,9 @@ export class AuctionEngine {
   /** Manual corrections from the candidate editor (assign / return to pool / DQ / reinstate). */
   async override(auctionId: string, playerId: string, o: PlayerOverride, actor: AuditActor) {
     return this.mutate(auctionId, actor, `player.override.${o.action.toLowerCase()}`, { playerId, ...o }, async (tx, a) => {
-      if (!["LOCKED", "LIVE", "PAUSED"].includes(a.status))
-        throw conflict("INVALID_STATE", "Manual corrections are available after locking and before the auction ends.");
+      if (!["LOCKED", "LIVE", "PAUSED", "COMPLETED"].includes(a.status))
+        throw conflict("INVALID_STATE", "Manual corrections are available once the configuration is locked.");
+      if (a.revealStatus !== "NOT_STARTED") throw conflict("REVEAL_STARTED", "The final reveal has started. Restart the reveal before correcting purchases.");
       const [p] = await tx
         .select()
         .from(players)
@@ -428,6 +493,8 @@ export class AuctionEngine {
       if (lot?.playerId === p.id) throw conflict("PLAYER_ON_BLOCK", "This candidate is on the block. Use the live console controls.");
       const now = new Date();
       const clearSale = { soldPrice: null, soldToTeamId: null, soldRound: null, soldAt: null, updatedAt: now };
+      // Once the auction is over there is no pool any more: a cancelled purchase becomes unsold.
+      const backTo = a.status === "COMPLETED" ? ("UNSOLD" as const) : ("POOL" as const);
       switch (o.action) {
         case "ASSIGN": {
           if (p.status !== "POOL" && p.status !== "UNSOLD") throw conflict("PLAYER_NOT_AVAILABLE", `${p.name} is ${p.status.toLowerCase()}.`);
@@ -441,14 +508,16 @@ export class AuctionEngine {
             .update(players)
             .set({ status: "SOLD", soldPrice: o.amount, soldToTeamId: team.id, soldRound: a.round, soldAt: now, updatedAt: now })
             .where(eq(players.id, p.id));
+          await this.refreshDisqualification(tx, a);
           return;
         }
         case "RETURN_TO_POOL":
-          if (p.status === "POOL") throw conflict("ALREADY_IN_POOL", `${p.name} is already in the pool.`);
+          if (p.status === backTo) throw conflict("ALREADY_IN_POOL", `${p.name} is already ${backTo === "POOL" ? "in the pool" : "unsold"}.`);
           await tx
             .update(players)
-            .set({ status: "POOL", ...clearSale })
+            .set({ status: backTo, ...clearSale })
             .where(eq(players.id, p.id));
+          await this.refreshDisqualification(tx, a);
           return;
         case "DISQUALIFY":
           if (p.status !== "POOL" && p.status !== "UNSOLD") throw conflict("PLAYER_NOT_AVAILABLE", "Return the candidate to the pool first.");
@@ -461,11 +530,23 @@ export class AuctionEngine {
           if (p.status !== "DISQUALIFIED") throw conflict("NOT_DISQUALIFIED", `${p.name} is not disqualified.`);
           await tx
             .update(players)
-            .set({ status: "POOL", ...clearSale })
+            .set({ status: backTo, ...clearSale })
             .where(eq(players.id, p.id));
           return;
       }
     });
+  }
+
+  /** After the auction has ended, a correction can change who reaches the minimum squad. */
+  private async refreshDisqualification(tx: Tx, a: AuctionRow) {
+    if (a.status !== "COMPLETED") return;
+    const fin = await this.finances(tx, a.id);
+    const ts = await tx.select().from(teams).where(eq(teams.auctionId, a.id));
+    for (const t of ts)
+      await tx
+        .update(teams)
+        .set({ disqualified: (fin.get(t.id)?.squadCount ?? 0) < a.minSquad, updatedAt: new Date() })
+        .where(eq(teams.id, t.id));
   }
 
   // ------------------------------------------------------------------------ countdown

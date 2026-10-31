@@ -8,6 +8,7 @@ import type { AuctionSettings, LiveSnapshot } from "@/shared/types";
 export interface AuctionDetail {
   auction: AuctionSettings;
   counts: { teams: number; players: number; pool: number; sold: number; unsold: number; disqualified: number };
+  readiness: { profiles: number; withSalary: number; verified: number; withLetter: number; withOriginalName: number; warnings: string[] };
   issues: { blocking: string[]; warnings: string[] };
 }
 
