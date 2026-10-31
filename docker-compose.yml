@@ -1,0 +1,51 @@
+# TechSara Placement League — the app and its PostgreSQL database.
+#
+#   docker compose up -d --build     start (first build takes a few minutes)
+#   open http://localhost:3000/admin  organizer console (APP_PORT in .env changes the port)
+#   docker compose logs app          shows the organizer password generated on first start
+#                                    (unless ADMIN_PASSWORD is set in .env)
+#   docker compose down              stop (data is kept in the named volumes)
+#
+# Optional settings in a .env file next to this file: APP_PORT, ADMIN_USERNAME, ADMIN_PASSWORD,
+# POSTGRES_PASSWORD (only takes effect when the database volume is first created), COOKIE_SECURE.
+name: techsara-placement-league
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tpl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tpl}
+      POSTGRES_DB: tpl
+    volumes:
+      - tpl_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tpl -d tpl"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    build: .
+    image: techsara-placement-league:latest
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://tpl:${POSTGRES_PASSWORD:-tpl}@db:5432/tpl
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      PUBLIC_URL: http://localhost:${APP_PORT:-3000}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - tpl_uploads:/app/storage/uploads
+
+volumes:
+  tpl_pg:
+  tpl_uploads:

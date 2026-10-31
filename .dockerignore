@@ -1,0 +1,25 @@
+# Keep the image small and free of local data and secrets.
+node_modules
+.next
+.data
+storage
+test-results
+playwright-report
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.ppk
+.github
+deploy
+*.tsbuildinfo
+next-env.d.ts
+docs
+tools
+tests
+*.md
+.git
+Dockerfile
+docker-compose*.yml
+.dockerignore

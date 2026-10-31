@@ -1,0 +1,123 @@
+# CI on every push and pull request; deploy to the EC2 server on every push to main.
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   EC2_HOST                 public IP or DNS name of the server, e.g. 34.229.1.191
+#   EC2_SSH_KEY              the full private key (.pem) used to log in to the server
+#   CLOUDFLARE_TUNNEL_TOKEN  the token of the Cloudflare tunnel (the long "eyJ…" value)
+#   EC2_USER                 optional — ubuntu / ec2-user are tried automatically
+#   TPL_ADMIN_PASSWORD       optional — first organizer password (otherwise generated on the server)
+#
+# The deploy job never prints secrets: this repository's Actions logs are public.
+name: CI / Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck, lint, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npx prettier --check .
+      - name: Unit and integration tests (embedded PostgreSQL)
+        run: npx vitest run
+      - run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npx playwright test
+      - name: Keep the Playwright report when tests fail
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+  deploy:
+    name: Deploy to EC2
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://tpl.techsarasolutions.com
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+      TPL_ADMIN_PASSWORD: ${{ secrets.TPL_ADMIN_PASSWORD }}
+    steps:
+      - name: Check deployment secrets
+        id: secrets
+        run: |
+          missing=""
+          for v in EC2_HOST EC2_SSH_KEY CLOUDFLARE_TUNNEL_TOKEN; do [ -n "${!v}" ] || missing="$missing $v"; done
+          if [ -n "$missing" ]; then
+            echo "::warning title=Deployment skipped::Add these repository secrets (Settings → Secrets and variables → Actions):$missing — then run this workflow again."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.secrets.outputs.ready == 'true'
+
+      - name: Connect to the server
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -T 20 -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          for u in $EC2_USER ubuntu ec2-user admin; do
+            if ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new "$u@$EC2_HOST" true 2>/dev/null; then
+              echo "SSH_USER=$u" >> "$GITHUB_ENV"
+              echo "Connected as $u"
+              exit 0
+            fi
+          done
+          echo "::error title=SSH failed::Could not log in to the server. Check EC2_HOST / EC2_SSH_KEY and that the security group allows SSH (port 22) from GitHub Actions."
+          exit 1
+
+      - name: Upload the release
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          git archive --format=tar.gz -o release.tgz HEAD
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes release.tgz "$SSH_USER@$EC2_HOST:/tmp/tpl-release.tgz"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/deploy.sh "$SSH_USER@$EC2_HOST:/tmp/tpl-deploy.sh"
+
+      - name: Deploy (Docker Compose — app, PostgreSQL, Cloudflare Tunnel)
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          printf 'CLOUDFLARE_TUNNEL_TOKEN=%s\nADMIN_PASSWORD=%s\nRELEASE=%s\n' \
+            "$CLOUDFLARE_TUNNEL_TOKEN" "$TPL_ADMIN_PASSWORD" "$GITHUB_SHA" |
+            ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$SSH_USER@$EC2_HOST" \
+              'sudo bash /tmp/tpl-deploy.sh /tmp/tpl-release.tgz; rc=$?; rm -f /tmp/tpl-release.tgz /tmp/tpl-deploy.sh; exit $rc'
+
+      - name: Check https://tpl.techsarasolutions.com
+        if: steps.secrets.outputs.ready == 'true'
+        continue-on-error: true
+        run: curl -fsS --retry 12 --retry-delay 10 --retry-all-errors https://tpl.techsarasolutions.com/api/health

@@ -1,0 +1,14 @@
+# Prettier formats the application code and config only.
+node_modules
+.next
+.data
+storage
+test-results
+playwright-report
+drizzle
+docs
+tools
+public
+*.md
+package-lock.json
+next-env.d.ts
