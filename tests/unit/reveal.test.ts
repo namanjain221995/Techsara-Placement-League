@@ -89,3 +89,24 @@ describe("annual salary input (whole US dollars)", () => {
     expect(formatUsd(null)).toBe("—");
   });
 });
+
+describe("live-screen timer position (client request, 1 Nov 2026)", () => {
+  it("accepts a position anywhere on the screen, or the default spot", async () => {
+    const { timerLayoutSchema } = await import("../../src/shared/schemas");
+    expect(timerLayoutSchema.parse({ x: 12.3456, y: 80, scale: 1.5 })).toEqual({ x: 12.35, y: 80, scale: 1.5 });
+    expect(timerLayoutSchema.parse({ x: null, y: null, scale: 1 })).toEqual({ x: null, y: null, scale: 1 });
+    expect(timerLayoutSchema.parse({ x: 0, y: 100, scale: 0.5 })).toEqual({ x: 0, y: 100, scale: 0.5 });
+  });
+  it("rejects positions off the screen, half positions and silly sizes", async () => {
+    const { timerLayoutSchema } = await import("../../src/shared/schemas");
+    for (const bad of [
+      { x: -1, y: 10, scale: 1 },
+      { x: 10, y: 101, scale: 1 },
+      { x: 10, y: null, scale: 1 },
+      { x: 10, y: 10, scale: 0.2 },
+      { x: 10, y: 10, scale: 5 },
+      { x: "10", y: 10, scale: 1 },
+    ])
+      expect(timerLayoutSchema.safeParse(bad).success).toBe(false);
+  });
+});

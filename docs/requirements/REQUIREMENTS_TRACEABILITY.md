@@ -1,6 +1,6 @@
 # Requirements Traceability — video evidence → code → tests
 
-Test files: **U** = `tests/unit/rules.test.ts` · **U-W** = `tests/unit/reveal.test.ts` · **I-L** = `tests/integration/live.test.ts` · **I-R** = `tests/integration/realtime.test.ts` · **I-W** = `tests/integration/reveal.test.ts` · **E-F** = `tests/e2e/organizer-flow.spec.ts` · **E-R** = `tests/e2e/resilience.spec.ts` · **E-W** = `tests/e2e/final-reveal.spec.ts`.
+Test files: **U** = `tests/unit/rules.test.ts` · **U-W** = `tests/unit/reveal.test.ts` · **I-L** = `tests/integration/live.test.ts` · **I-R** = `tests/integration/realtime.test.ts` · **I-W** = `tests/integration/reveal.test.ts` · **E-F** = `tests/e2e/organizer-flow.spec.ts` · **E-R** = `tests/e2e/resilience.spec.ts` · **E-W** = `tests/e2e/final-reveal.spec.ts` · **I-D** = `tests/integration/display.test.ts` · **E-T** = `tests/e2e/timer-position.spec.ts`.
 
 | Req | Class | Video | Implementation | Verified by |
 |---|---|---|---|---|
@@ -58,3 +58,8 @@ Test files: **U** = `tests/unit/rules.test.ts` · **U-W** = `tests/unit/reveal.t
 | R-WIN-08 preserved on refresh | CONFIRMED | request §5 | state in PostgreSQL (`auctions.reveal_*`) | I-W (server restart), E-W (projector reload) |
 | R-WIN-09 disqualified teams unranked | INFERRED | 06:53–07:08 | `rankStandings` | U-W, I-W |
 | R-WIN-10 order, readiness gate, freeze, back/restart | PROPOSED | — | `START_REVEAL` checks, `assertBeforeReveal`, override guard | I-W |
+
+## Countdown position (client screenshot, 1 Nov 2026)
+| Req | Class | Source | Implementation | Verified by |
+|---|---|---|---|---|
+| R-DISPLAY-09 timer never over the bid; movable anywhere | CONFIRMED | client screenshot + message, 1 Nov 2026 | `src/components/display/countdown.tsx` (default slot next to `display-bid-box`, floating portal at the saved %, drag + double-click for organizers), `components/admin/timer-layout.tsx` (map, sizes, reset), `PUT /auctions/:id/timer-layout`, `auctions.timer_layout` | E-T, I-D, U-W (schema) |

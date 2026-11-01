@@ -105,9 +105,9 @@ flowchart LR
 | `npx eslint .` | ✅ 0 errors, 0 warnings |
 | `npx prettier --check .` | ✅ |
 | `rm -rf .next && npx next build` | ✅ 11 routes |
-| `npx vitest run`: unit | ✅ **37 / 37** (25 + 12 for the salary winner, 1 Nov 2026) |
-| `npx vitest run`: integration (real PostgreSQL, HTTP, WebSocket) | ✅ **24 / 24** (21 + 3) |
-| `npx playwright test`: end-to-end, production build, Chromium | ✅ **6 / 6** (5 + the Final Reveal flow) |
+| `npx vitest run`: unit | ✅ **39 / 39** (25 + 12 salary winner + 2 timer position, 1 Nov 2026) |
+| `npx vitest run`: integration (real PostgreSQL, HTTP, WebSocket) | ✅ **25 / 25** (21 + 3 + 1) |
+| `npx playwright test`: end-to-end, production build, Chromium | ✅ **7 / 7** (5 + Final Reveal + timer position) |
 | Docker image steps reproduced outside Docker (production-only install, image start command, fresh external PostgreSQL) | ✅ |
 | Docker Compose on the client laptop (Windows, Docker Desktop) | ✅ image built, both containers running, app served at http://localhost:3000 |
 | Demo run on the production server | ✅ Full demo auction played to the end; 15 screenshots taken (plus 2 from the end-to-end layout test); 0 page or console errors; Excel export checked |
@@ -170,6 +170,8 @@ Requires Node.js 22 LTS (or ≥ 20.11). Nothing else: PostgreSQL is bundled.
 - Profiles are revealed in **purchase order** (Q-09); the salary joins the team total at the **team** step (Q-10).
 - A team with $0 cannot be the winner; the reveal cannot start while a purchased profile has no salary.
 - From its reveal step on, an offer letter can be opened by anyone with the display link — redact private details (address, signature, IDs) before uploading.
+
+**Countdown position (client screenshot, 1 Nov 2026):** the timer now sits next to the *Current bid* box (it covered the label before) and can be moved anywhere — drag it on the live screen while signed in (double-click to reset) or on the live console's screen map, sizes S–XL. Saved per auction, all screens follow instantly; phones keep the default spot.
 
 **Data:** no salary amounts exist in the app yet — nothing fictional was stored and none can be invented. The organizer enters the 20 real, verified salaries and uploads the 20 letters before the event.
 

@@ -1,0 +1,1 @@
+ALTER TABLE "auctions" ADD COLUMN "timer_layout" jsonb DEFAULT '{"x":null,"y":null,"scale":1}'::jsonb NOT NULL;

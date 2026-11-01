@@ -2,7 +2,7 @@
 
 import confetti from "canvas-confetti";
 import { gsap } from "gsap";
-import { Expand, Gavel, Megaphone, Radio, Timer, Trophy, Volume2, VolumeX, WifiOff } from "lucide-react";
+import { Expand, Gavel, Megaphone, Radio, Trophy, Volume2, VolumeX, WifiOff } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AutoFitDescription } from "@/components/description";
@@ -12,6 +12,7 @@ import { useCountdown, type ConnState } from "@/lib/live";
 import { formatMoney, formatUsd, multipleOfBase } from "@/shared/money";
 import { orderTeamsForDisplay } from "@/shared/rules";
 import type { LiveSnapshot, TeamView } from "@/shared/types";
+import { CountdownTimer, useIsOrganizer } from "./countdown";
 import { FinalLeaderboard, RevealComingUp, RevealStage } from "./reveal";
 
 const vw = (min: number, v: number, max: number) => `clamp(${min}rem, ${v}vw, ${max}rem)`;
@@ -22,6 +23,7 @@ export function DisplayStage({ snapshot: s, conn, clockOffset }: { snapshot: Liv
   const teamById = useMemo(() => new Map(s.teams.map((t) => [t.id, t])), [s.teams]);
   const [sound, setSound] = useState(false);
   const live = a.status === "LIVE" || a.status === "PAUSED";
+  const organizer = useIsOrganizer();
 
   return (
     <div className="stage-bg fixed inset-0 flex flex-col overflow-hidden text-white select-none" data-testid="display" data-status={a.status}>
@@ -43,7 +45,7 @@ export function DisplayStage({ snapshot: s, conn, clockOffset }: { snapshot: Liv
           <>
             <AnimatePresence mode="wait">
               {s.lot ? (
-                <PlayerStage key={s.lot.id} s={s} money={money} teamById={teamById} clockOffset={clockOffset} />
+                <PlayerStage key={s.lot.id} s={s} money={money} teamById={teamById} clockOffset={clockOffset} organizer={organizer} />
               ) : (
                 <Waiting key="waiting" s={s} money={money} teamById={teamById} />
               )}
@@ -148,7 +150,19 @@ function Counter({ label, value, accent }: { label: string; value: number; accen
 // ------------------------------------------------------------------------ player stage
 type Money = (k: number | null | undefined) => string;
 
-function PlayerStage({ s, money, teamById, clockOffset }: { s: LiveSnapshot; money: Money; teamById: Map<string, TeamView>; clockOffset: number }) {
+function PlayerStage({
+  s,
+  money,
+  teamById,
+  clockOffset,
+  organizer,
+}: {
+  s: LiveSnapshot;
+  money: Money;
+  teamById: Map<string, TeamView>;
+  clockOffset: number;
+  organizer: boolean;
+}) {
   const lot = s.lot!;
   const p = lot.player;
   const leader = lot.leadingTeamId ? teamById.get(lot.leadingTeamId) : null;
@@ -193,6 +207,7 @@ function PlayerStage({ s, money, teamById, clockOffset }: { s: LiveSnapshot; mon
                 Base price <b className="text-white">{money(lot.basePrice)}</b>
               </div>
             </div>
+            {countdown && <CountdownTimer c={countdown} layout={s.auction.timerLayout} auctionId={s.auction.id} editable={organizer} />}
             <BidBox amount={lot.currentBid} base={lot.basePrice} money={money} timeUp={!!countdown?.timeUp} />
           </div>
           <div className="mt-auto pt-[0.8vw]">
@@ -206,7 +221,6 @@ function PlayerStage({ s, money, teamById, clockOffset }: { s: LiveSnapshot; mon
         </div>
         <AutoFitDescription text={p.description} maxPx={46} minPx={12} className="flex-1 text-ink-50" />
       </div>
-      {countdown && <TimerRing c={countdown} />}
     </motion.section>
   );
 }
@@ -214,6 +228,7 @@ function PlayerStage({ s, money, teamById, clockOffset }: { s: LiveSnapshot; mon
 function BidBox({ amount, base, money, timeUp }: { amount: number | null; base: number; money: Money; timeUp: boolean }) {
   return (
     <div
+      data-testid="display-bid-box"
       className={cn(
         "shrink-0 rounded-[1vw] px-[1.4vw] py-[0.8vw] text-right ring-1",
         timeUp ? "bg-loss-500/15 ring-loss-500/60" : "bg-ink-950/60 ring-gold-500/40",
@@ -271,38 +286,6 @@ function BiddingBar({ leader, hasBids, base }: { leader: TeamView | null; hasBid
         </div>
       </div>
     </motion.div>
-  );
-}
-
-function TimerRing({ c }: { c: NonNullable<ReturnType<typeof useCountdown>> }) {
-  const secs = Math.ceil(c.remainingMs / 1000);
-  const r = 26;
-  const circ = 2 * Math.PI * r;
-  const danger = secs <= 5;
-  return (
-    <div
-      className={cn("absolute top-[1vw] right-[1vw] size-[5vw] min-h-12 min-w-12", c.timeUp && "animate-pulse")}
-      aria-label={c.timeUp ? "Time up" : `${secs} seconds left`}
-    >
-      <svg viewBox="0 0 64 64" className="size-full -rotate-90">
-        <circle cx="32" cy="32" r={r} stroke="currentColor" strokeWidth="6" fill="none" className="text-ink-700" />
-        <circle
-          cx="32"
-          cy="32"
-          r={r}
-          strokeWidth="6"
-          fill="none"
-          strokeLinecap="round"
-          stroke={danger ? "#ef4444" : "#f5b83d"}
-          strokeDasharray={circ}
-          strokeDashoffset={circ * (1 - c.fraction)}
-          style={{ transition: "stroke-dashoffset 0.1s linear" }}
-        />
-      </svg>
-      <span className="absolute inset-0 flex items-center justify-center font-display font-bold tabular-nums" style={{ fontSize: vw(0.9, 1.5, 2.4) }}>
-        {c.timeUp ? <Timer className="size-1/2 text-loss-400" /> : secs}
-      </span>
-    </div>
   );
 }
 

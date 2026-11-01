@@ -9,9 +9,9 @@ Environment: Ubuntu 24.04.5 (cloud build container), 2 vCPU, 7.8 GB RAM, Node.js
 | Lint | `npx eslint .` | ✅ 0 errors, 0 warnings (one justified inline disable: hard redirect on expired session in `src/lib/api.ts`) |
 | Formatting | `npx prettier --check .` | ✅ all code files formatted (docs excluded by `.prettierignore`) |
 | Production build | `rm -rf .next && npx next build` (Next.js 16.4.3, Turbopack) | ✅ clean build, 11 routes |
-| Unit tests | `npx vitest run` (project `unit`) | ✅ **37 / 37** (1 Nov 2026; 25 / 25 on 31 Oct) |
-| Integration tests (real PostgreSQL, HTTP + WebSocket) | `npx vitest run` (project `integration`) | ✅ **24 / 24** (1 Nov 2026; 21 / 21 on 31 Oct) |
-| End-to-end (production build, Chromium) | `npx playwright test` | ✅ **6 / 6** on 1 Nov 2026 (48.6 s, after a clean rebuild); 5 / 5 on 31 Oct (36.5 s) |
+| Unit tests | `npx vitest run` (project `unit`) | ✅ **39 / 39** (1 Nov 2026, latest; 37 after the salary winner, 25 on 31 Oct) |
+| Integration tests (real PostgreSQL, HTTP + WebSocket) | `npx vitest run` (project `integration`) | ✅ **25 / 25** (1 Nov 2026, latest; 24 after the salary winner, 21 on 31 Oct) |
+| End-to-end (production build, Chromium) | `npx playwright test` | ✅ **7 / 7** on 1 Nov 2026 after a clean rebuild — run 4 times in a row on fresh databases (1.2–1.3 min each); 6 / 6 after the salary winner, 5 / 5 on 31 Oct |
 | Real-time latency (command → public display, localhost) | logged by `realtime.test.ts` | **14.3 ms, 11.8 ms, 9.4 ms** on 1 Nov 2026 (31 Oct: 12.5 / 9.9 / 16.7; earlier runs 12.8 / 8.6 / 15.9, 23.9 / 9.1 / 9.9, 14.5 / 10.5 / 10.7, 12.6 / 9.5 / 10.6 ms); assertion < 500 ms |
 | Docker image steps (outside Docker) | clean `npm ci` → `next build` → `npm ci --omit=dev` → `node --import tsx server/index.ts` in the image's runtime layout, against a fresh external PostgreSQL | ✅ migrations on an empty database, generated organizer password printed, health check 200, demo seed (`--force`), full UI run + auction to the end, 0 page errors, clean SIGTERM shutdown. The image could not be built on the build machine (container registries blocked); `docker compose config` validates the compose file. |
 | Docker Compose on the client laptop (Windows 11, Docker Desktop) | `start-with-docker.cmd` → `docker compose up -d --build`; `add-demo-auction.cmd` | ✅ image built (≈ 2 min), `db` and `app` containers running, port 3000 published, the app answered its health check and served the organizer sign-in page at `http://localhost:3000`, demo auction created. |
@@ -108,3 +108,12 @@ Seven profiles with salaries and letters (one watermarked sample PNG, six PDFs).
 ### Not tested (1 Nov additions)
 - PDF letters **rendering** inside the projector browser: headless Chromium has no PDF viewer, so the tests check the embedded frame and the served file (`application/pdf`), not the drawn pages. Image letters were verified visually.
 - The client's real offer letters and salaries (not available; nothing was invented).
+
+## 1 Nov 2026 (later) — countdown position on the live screen
+Client screenshot: the countdown ring covered the "Current bid" label. Re-run on the final code: `tsc` 0 errors · `eslint .` clean · `prettier --check .` clean · clean `next build` · **unit 39 / 39 · integration 25 / 25 · end-to-end 7 / 7**.
+- **Measured default placement** (public display, candidate on the block): the timer no longer touches the bid box or the candidate name at 1920×1080, 1536×864, 1366×768, 1280×720, 1112×625, 3840×2160 and 390×844 (phone).
+- **Unit (2):** the position schema accepts any spot 0–100 % (rounded to 0.01) or the default spot, sizes 0.5–3; rejects off-screen values, a single coordinate, tiny/huge sizes, strings.
+- **Integration — `tests/integration/display.test.ts` (1):** organizer moves the timer while LIVE with a candidate on the block → public socket receives the new position, public API shows it, the candidate stays on the block; 400 for half/off-screen positions, 401 anonymous, 403 without the CSRF header; reset after the auction ended; copied by *duplicate*; audit entry `auction.timer_layout`.
+- **End-to-end — `tests/e2e/timer-position.spec.ts` (1):** no overlap with the bid box or the name at 1920×1080, 1366×768 and 1112×625; a spectator's drag changes nothing; the organizer drags the timer on the live screen to (300, 820) → saved as 15.6 % / 75.9 % and the spectator screen shows it there within 6 px; console size XL roughly doubles it; dragging on the console map moves it to the top-left; *Next to the bid* resets it (no overlap again); double-click on the organizer's live screen resets it; a refreshed projector keeps a saved position.
+- **Flake found and fixed in the test:** measuring before the web fonts had loaded gave a 35 px offset in one full run; the test now waits for `document.fonts.ready` and a settled position (4 consecutive full runs green afterwards).
+- Screenshots: `docs/screenshots/display-timer-default.png`, `display-timer-moved.png`, `console-timer-position.png`.

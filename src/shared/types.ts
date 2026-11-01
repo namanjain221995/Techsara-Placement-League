@@ -6,6 +6,18 @@ export type LotResult = "OPEN" | "SOLD" | "UNSOLD" | "SKIPPED" | "DISQUALIFIED";
 export type PoolOrder = "RANDOM" | "SEQUENTIAL";
 export type RevealStatus = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETE";
 
+/**
+ * Where the countdown sits on the live screen (client request, 1 Nov 2026: "the user can move the timer anywhere").
+ * x/y = centre of the timer in % of the screen width/height; null = default spot next to the current bid.
+ * scale = size multiplier (1 = default).
+ */
+export interface TimerLayout {
+  x: number | null;
+  y: number | null;
+  scale: number;
+}
+export const DEFAULT_TIMER_LAYOUT: TimerLayout = { x: null, y: null, scale: 1 };
+
 export interface AuctionSettings {
   id: string;
   slug: string;
@@ -19,6 +31,7 @@ export interface AuctionSettings {
   maxSquad: number;
   timerEnabled: boolean;
   timerSeconds: number;
+  timerLayout: TimerLayout;
   poolOrder: PoolOrder;
   roles: string[];
   round: number;

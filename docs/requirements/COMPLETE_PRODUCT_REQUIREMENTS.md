@@ -109,6 +109,12 @@ All CONFIRMED by the client's written request unless marked; full rules in `GAME
 | R-WIN-09 | Disqualified teams are not ranked and cannot win. | INFERRED (from R-END-02) |
 | R-WIN-10 | Reveal order = purchase order; reveal blocked while a purchased profile has no salary; private data frozen during the reveal; Back / Restart controls. | PROPOSED |
 
+### 3.9 Countdown position (client request with screenshot, 1 Nov 2026)
+| ID | Requirement | Class |
+|---|---|---|
+| R-DISPLAY-09 | The countdown must not sit on the wrong spot (it covered the "Current bid" label); the user can move the timer anywhere on the live screen. | CONFIRMED |
+| R-DISPLAY-10 | Default spot next to the current-bid box; drag on the live screen (signed-in organizer) or on the console's screen map; size S–XL; reset; saved per auction for every screen; phones keep the default spot. | PROPOSED (how "anywhere" is offered) |
+
 ## 4. Open questions (UNRESOLVED)
 | ID | Question | Current behaviour |
 |---|---|---|

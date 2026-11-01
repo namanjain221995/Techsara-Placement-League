@@ -27,6 +27,7 @@ import { useAuction } from "@/components/admin/auction-context";
 import { CustomBidDialog } from "@/components/admin/custom-bid-dialog";
 import { HiddenTotalsPanel, LotPrivateDetails, usePrivateToggle } from "@/components/admin/hidden-totals";
 import { RevealConsole } from "@/components/admin/reveal-console";
+import { TimerLayoutPanel } from "@/components/admin/timer-layout";
 import { Description } from "@/components/description";
 import { PlayerPhoto, TeamLogo } from "@/components/media";
 import { Button } from "@/components/ui/button";
@@ -515,6 +516,8 @@ export default function LiveConsolePage() {
               </div>
             )}
           </div>
+
+          <TimerLayoutPanel snapshot={s} />
 
           <div className="panel p-4 text-xs text-ink-300">
             <h3 className="mb-2 font-bold tracking-widest uppercase">Shortcuts</h3>

@@ -107,6 +107,21 @@ export const liveCommandSchema = z.discriminatedUnion("type", [
 ]);
 export type LiveCommand = z.infer<typeof liveCommandSchema>;
 
+/** Live-screen countdown position (% of the screen, centre of the timer) and size; x/y null = default spot. */
+export const timerLayoutSchema = z
+  .object({
+    x: z.number().min(0).max(100).nullable(),
+    y: z.number().min(0).max(100).nullable(),
+    scale: z.number().min(0.5).max(3),
+  })
+  .refine((v) => (v.x === null) === (v.y === null), { message: "Give both x and y, or neither (default position)." })
+  .transform((v) => ({
+    x: v.x === null ? null : Math.round(v.x * 100) / 100,
+    y: v.y === null ? null : Math.round(v.y * 100) / 100,
+    scale: Math.round(v.scale * 100) / 100,
+  }));
+export type TimerLayoutInput = z.infer<typeof timerLayoutSchema>;
+
 export const overrideSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("ASSIGN"), teamId: z.uuid(), amount: money }),
   z.object({ action: z.literal("RETURN_TO_POOL") }),

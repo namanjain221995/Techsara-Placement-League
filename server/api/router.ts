@@ -12,6 +12,7 @@ import {
   playerSchema,
   reorderSchema,
   teamSchema,
+  timerLayoutSchema,
 } from "../../src/shared/schemas";
 import { authenticate, clearSessionCookie, createSession, csrfGuard, destroySession, requireAdmin, SESSION_COOKIE, setSessionCookie } from "../auth/auth";
 import { getDb } from "../db";
@@ -140,6 +141,12 @@ export function apiRouter(): Router {
     const id = param(req, "id");
     await catalog.updateSettings(getEngine(), actor(req), id, input);
     res.json(await catalog.auctionDetail(getDb(), id));
+  });
+  /** Position and size of the countdown on the live screen; allowed at any time (cosmetic). */
+  a.put("/auctions/:id/timer-layout", async (req, res) => {
+    const layout = timerLayoutSchema.parse(req.body);
+    await catalog.setTimerLayout(getEngine(), actor(req), param(req, "id"), layout);
+    res.json({ timerLayout: layout });
   });
   a.post("/auctions/:id/clone", async (req, res) => {
     const { name } = cloneAuctionSchema.parse(req.body);

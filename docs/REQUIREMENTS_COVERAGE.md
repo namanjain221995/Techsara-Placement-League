@@ -48,6 +48,11 @@ Status: ✅ implemented and verified by automated tests · ☑ implemented, veri
 | R-WIN-07 | Ties: credits remaining, then joint winners | ✅ unit |
 | R-WIN-08 | Preserved on refresh / server restart | ✅ integration (restart) + E2E (refresh) |
 
+## CONFIRMED by the client (screenshot, 1 Nov 2026) — countdown position
+| ID | Requirement | Status |
+|---|---|---|
+| R-DISPLAY-09 | Countdown never covers the current bid; movable anywhere | ✅ E2E (no overlap at 1920×1080, 1366×768, 1112×625; drag on the live screen and on the console map; size; reset; refresh) + integration (API, broadcast, access) |
+
 ## INFERRED from the demonstrated reference flow
 | ID | Requirement | Status |
 |---|---|---|

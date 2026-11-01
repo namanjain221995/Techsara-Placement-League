@@ -17,6 +17,7 @@ import type {
   TeamStanding,
   TeamView,
 } from "../../src/shared/types";
+import { DEFAULT_TIMER_LAYOUT } from "../../src/shared/types";
 import type { DbOrTx } from "../db";
 import { auctions, bids, lots, players, teams, type AuctionRow, type LotRow, type PlayerRow, type TeamRow } from "../db/schema";
 import { notFound } from "../util/errors";
@@ -41,6 +42,7 @@ export function auctionView(a: AuctionRow): AuctionSettings {
     maxSquad: a.maxSquad,
     timerEnabled: a.timerEnabled,
     timerSeconds: a.timerSeconds,
+    timerLayout: { ...DEFAULT_TIMER_LAYOUT, ...(a.timerLayout ?? {}) },
     poolOrder: a.poolOrder,
     roles: a.roles,
     round: a.round,

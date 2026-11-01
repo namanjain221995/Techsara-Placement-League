@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, asc, count, desc, eq, max, sql } from "drizzle-orm";
-import { DEFAULT_ROLES, type AuctionSettingsInput, type PlayerInput, type TeamInput } from "../../src/shared/schemas";
+import { DEFAULT_ROLES, type AuctionSettingsInput, type PlayerInput, type TeamInput, type TimerLayoutInput } from "../../src/shared/schemas";
 import { setupIssues } from "../../src/shared/rules";
 import type { Db, Tx } from "../db";
 import { auctions, bids, lots, players, processedCommands, teams, type AuctionRow } from "../db/schema";
@@ -165,6 +165,16 @@ export async function updateSettings(engine: AuctionEngine, actor: AuditActor, i
   });
 }
 
+/**
+ * Where the countdown appears on the live screen (client request, 1 Nov 2026). Purely cosmetic,
+ * so it can change in any state — including during the live auction — and every screen follows at once.
+ */
+export async function setTimerLayout(engine: AuctionEngine, actor: AuditActor, id: string, layout: TimerLayoutInput) {
+  return engine.mutate(id, actor, "auction.timer_layout", { ...layout }, async (tx) => {
+    await tx.update(auctions).set({ timerLayout: layout }).where(eq(auctions.id, id));
+  });
+}
+
 /** R-SETUP-02 (client 00:04–00:17): duplicate an auction with its settings, teams and candidates. */
 export async function cloneAuction(db: Db, actor: AuditActor, id: string, name: string) {
   return db.transaction(async (tx) => {
@@ -182,6 +192,7 @@ export async function cloneAuction(db: Db, actor: AuditActor, id: string, name: 
         maxSquad: src.maxSquad,
         timerEnabled: src.timerEnabled,
         timerSeconds: src.timerSeconds,
+        timerLayout: src.timerLayout,
         poolOrder: src.poolOrder,
         roles: src.roles,
         createdBy: actor.id,

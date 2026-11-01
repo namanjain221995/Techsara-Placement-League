@@ -36,6 +36,12 @@ Auction credits are typed and shown in **millions**: type `25` for $25M, `1.5` f
 
 Buttons explain why a team cannot bid: *Leading* (already highest), *Too high* (amount above its max bid), *Full* (squad at maximum). The server enforces the same rules, so nothing illegal can slip through even with two organizers clicking at once.
 
+## Countdown position on the live screen
+The countdown sits next to the **Current bid** box by default (it never covers it). To put it anywhere else:
+- **On the live screen itself:** open the live screen in a browser where you are signed in (e.g. *Live screen* from the console), point at the timer and **drag** it — every screen (projector, LED wall) moves it at once. **Double-click** it to put it back next to the bid.
+- **From the live console:** panel **Timer on the live screen** → drag the timer on the small map of the screen; **S / M / L / XL** change its size; **Next to the bid** resets the position.
+The position is saved with the auction (it survives refreshes and restarts) and can change at any time, even during bidding. Phones always show the timer next to the bid. The audience cannot move it.
+
 ## Hidden salary totals (organizer only)
 The live console's **Hidden salary totals** panel shows each team's combined salary from **confirmed purchases** (SOLD) — a bid in progress never counts. It is masked by default; press **Show** (and **Hide** again before anyone looks at your laptop). The strip under the candidate's name on the block shows the real name, salary and letter the same way. The audience screen never receives this data before the reveal.
 

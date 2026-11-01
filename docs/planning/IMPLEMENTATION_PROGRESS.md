@@ -52,3 +52,9 @@ npm run typecheck && npm run lint && npm test && npm run test:e2e
 - [x] Docs: rules §9, requirements 3.8, coverage, traceability, guides, API/DB/realtime/security, limitations, test report, delivery report
 - [ ] Client to confirm Q-07 (DQ teams unranked), Q-09 (reveal order), Q-10 (salary/team step order)
 - [ ] Organizer to enter the 20 real salaries, original names and offer letters before the event
+
+## 1 Nov 2026 (later) — countdown position (client screenshot: timer on top of "Current bid")
+- [x] Default spot moved next to the current-bid box (no overlap at 1920×1080, 1536×864, 1366×768, 1280×720, 1112×625, 3840×2160, 390×844 — measured)
+- [x] Movable anywhere: drag on the live screen (signed-in organizer, double-click resets) or on the console map; sizes S–XL; reset
+- [x] Saved per auction (`timer_layout`, migration 0002), broadcast to every screen, cloned with the auction, audit-logged
+- [x] Tests: unit 2, integration 1, E2E 1; docs updated

@@ -20,7 +20,7 @@ Transport: Socket.IO 4 at path `/socket.io` (WebSocket first, HTTP long-polling 
 {
   version: 57, serverNow: 1793420000000,
   auction: { id, slug, name, status, currencySymbol, purse, basePrice, bidIncrement, minSquad, maxSquad,
-             timerEnabled, timerSeconds, poolOrder, roles, round, ... },
+             timerEnabled, timerSeconds, timerLayout: { x, y, scale }, poolOrder, roles, round, revealStatus, ... },
   teams: [{ id, name, shortName, color, logoUrl, members, sortOrder, purse, spent, remaining, squadCount, maxBid, disqualified }],
   lot: { id, sequence, round, player: {...}, basePrice, currentBid, leadingTeamId, bids: [...newest first],
          timer: { enabled, durationMs, endsAt, remainingMs, timeUp } } | null,

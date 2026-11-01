@@ -29,7 +29,8 @@ Common status codes: 400 `VALIDATION_FAILED` (details = `[{path, message}]`), 40
 | POST | `/auctions` | `{name}` → 201 `{auction}` (defaults: $25M, $1M, step $1M, squad 3–9) |
 | GET | `/auctions/:id` | `{auction, counts, readiness:{profiles, withSalary, verified, withLetter, withOriginalName, warnings[]}, issues:{blocking, warnings}}` |
 | PUT | `/auctions/:id/settings` | `{name, currencySymbol, purse, basePrice, bidIncrement, minSquad, maxSquad, timerEnabled, timerSeconds (5–600), poolOrder: RANDOM\|SEQUENTIAL, roles[]}`. After lock, money/squad fields → 409 `CONFIG_LOCKED` |
-| POST | `/auctions/:id/clone` | `{name}` → 201 (settings, teams, candidates incl. original names/salaries/letters, images; no results) |
+| PUT | `/auctions/:id/timer-layout` | `{x, y, scale}` — position of the countdown on the live screen: centre in % of the screen (0–100, both or neither; `null, null` = default spot next to the current bid), `scale` 0.5–3. Allowed in every state; broadcast to all screens at once |
+| POST | `/auctions/:id/clone` | `{name}` → 201 (settings incl. timer position, teams, candidates incl. original names/salaries/letters, images; no results) |
 | DELETE | `/auctions/:id` | 409 `AUCTION_LIVE` while live/paused |
 | POST | `/auctions/:id/lock` | 409 `SETUP_INCOMPLETE` (details = issues); `{ok, warnings}` |
 | POST | `/auctions/:id/unlock` | LOCKED → DRAFT |

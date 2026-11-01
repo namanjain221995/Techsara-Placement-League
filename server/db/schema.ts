@@ -51,6 +51,8 @@ export const auctions = pgTable(
     maxSquad: integer("max_squad").notNull().default(9),
     timerEnabled: boolean("timer_enabled").notNull().default(false),
     timerSeconds: integer("timer_seconds").notNull().default(30),
+    // Position/size of the countdown on the live screen (cosmetic; editable at any time).
+    timerLayout: jsonb("timer_layout").$type<{ x: number | null; y: number | null; scale: number }>().notNull().default({ x: null, y: null, scale: 1 }),
     poolOrder: poolOrderEnum("pool_order").notNull().default("RANDOM"),
     roles: jsonb("roles").$type<string[]>().notNull(),
     round: integer("round").notNull().default(1),

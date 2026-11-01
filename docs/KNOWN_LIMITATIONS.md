@@ -24,6 +24,7 @@
 - **Excel import** is all-or-nothing, max 500 rows per file; tested with the template and synthetic CSV only. Offer letters cannot be imported from the sheet — upload them per candidate.
 - **Offer letters**: PDF, PNG, JPG or WEBP up to 10 MB. PDFs are shown with the browser's built-in PDF viewer (Chrome/Edge/Firefox); the projector browser must be able to display PDFs inline, otherwise upload the letter as an image. No server-side redaction.
 - **Salaries** are whole US dollars (no cents), entered by the organizer; the app cannot read amounts from the letters — the "verified" tick is the organizer's own check.
+- **Countdown position** is one per auction (all large screens share it) and is given in % of the screen, so on a screen with a different shape it lands in the same relative spot, not necessarily next to the same element. Phones always use the default spot. The console's screen map is a simplified 16:9 sketch.
 - **Private data on organizer screens** (hidden totals, original names) is masked on the live console by default, but anyone looking at an organizer screen after pressing "Show" can see it.
 - **Description formatting** is plain text: there is no bold/italic/link support (see Q-06).
 - **Multiple simultaneous auctions** are supported by design but were not load-tested together.

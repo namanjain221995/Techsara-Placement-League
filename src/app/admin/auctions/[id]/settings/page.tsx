@@ -203,7 +203,7 @@ export default function SettingsPage() {
           <div className="grid gap-5 md:grid-cols-3">
             <Field
               label="Countdown per candidate"
-              hint="Restarts on every bid. At zero the screen shows “time up” — the auctioneer still decides Sold / Unsold."
+              hint="Restarts on every bid. At zero the screen shows “time up” — the auctioneer still decides Sold / Unsold. Move or resize it on the live screen from the Live console (Timer on the live screen)."
             >
               <div className="flex items-center gap-3">
                 <Switch checked={form.timerEnabled} onChange={(v) => set("timerEnabled", v)} label="Countdown" disabled={done} />
